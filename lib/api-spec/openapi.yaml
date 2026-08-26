@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: agent
+    description: LocalFood AI agent operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,72 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /agent/chat:
+    post:
+      operationId: runAgent
+      tags: [agent]
+      summary: Run the local food agent
+      description: Runs the explicit plan-act-observe-decide agent loop for a conversation turn.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentRequest"
+      responses:
+        "200":
+          description: Agent response with recommendations and trace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Agent error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /agent/memory/{sessionId}:
+    get:
+      operationId: getAgentMemory
+      tags: [agent]
+      summary: Read remembered preferences
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current session memory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryState"
+    delete:
+      operationId: clearAgentMemory
+      tags: [agent]
+      summary: Clear remembered preferences
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cleared memory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryState"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +101,203 @@ components:
           type: string
       required:
         - status
+    AgentRequest:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          minLength: 1
+        message:
+          type: string
+          minLength: 1
+          maxLength: 1000
+      required:
+        - sessionId
+        - message
+    MemoryState:
+      type: object
+      properties:
+        diet:
+          type: ["string", "null"]
+        preferredCuisine:
+          type: ["string", "null"]
+        dislikedCuisine:
+          type: ["string", "null"]
+        spicePreference:
+          type: ["string", "null"]
+        budget:
+          type: ["number", "null"]
+        location:
+          type: ["string", "null"]
+        updatedAt:
+          type: string
+      required:
+        - diet
+        - preferredCuisine
+        - dislikedCuisine
+        - spicePreference
+        - budget
+        - location
+        - updatedAt
+    Restaurant:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        city:
+          type: string
+        cuisine:
+          type: array
+          items:
+            type: string
+        diet:
+          type: array
+          items:
+            type: string
+        rating:
+          type: number
+        averagePrice:
+          type: number
+        priceRange:
+          type: string
+        spiceLevel:
+          type: string
+        distanceKm:
+          type: number
+        description:
+          type: string
+      required:
+        - id
+        - name
+        - city
+        - cuisine
+        - diet
+        - rating
+        - averagePrice
+        - priceRange
+        - spiceLevel
+        - distanceKm
+        - description
+    ActivityEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [thought, tool, observation, decision, success, warning]
+        label:
+          type: string
+        detail:
+          type: string
+        status:
+          type: string
+          enum: [complete, active, pending]
+      required:
+        - id
+        - kind
+        - label
+        - detail
+        - status
+    TraceStep:
+      type: object
+      properties:
+        step:
+          type: number
+        title:
+          type: string
+        type:
+          type: string
+        detail:
+          type: string
+        tool:
+          type: ["string", "null"]
+        arguments:
+          type: ["object", "null"]
+          additionalProperties: true
+        result:
+          type: ["string", "null"]
+      required:
+        - step
+        - title
+        - type
+        - detail
+        - tool
+        - arguments
+        - result
+    Recommendation:
+      allOf:
+        - $ref: "#/components/schemas/Restaurant"
+        - type: object
+          properties:
+            score:
+              type: number
+            reason:
+              type: string
+            scoreBreakdown:
+              type: object
+              additionalProperties:
+                type: number
+          required:
+            - score
+            - reason
+            - scoreBreakdown
+    AgentResponse:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        mode:
+          type: string
+          enum: [demo, llm]
+        reply:
+          type: string
+        memory:
+          $ref: "#/components/schemas/MemoryState"
+        activity:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActivityEvent"
+        trace:
+          type: array
+          items:
+            $ref: "#/components/schemas/TraceStep"
+        recommendations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Recommendation"
+        stats:
+          type: object
+          properties:
+            searched:
+              type: number
+            afterCuisine:
+              type: number
+            afterDiet:
+              type: number
+            elapsedMs:
+              type: number
+          required:
+            - searched
+            - afterCuisine
+            - afterDiet
+            - elapsedMs
+      required:
+        - sessionId
+        - mode
+        - reply
+        - memory
+        - activity
+        - trace
+        - recommendations
+        - stats
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
 

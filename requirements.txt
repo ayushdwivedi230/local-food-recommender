@@ -1,0 +1,3 @@
+# The agent engine uses only Python's standard library.
+# Jupyter is optional and only needed to open demo.ipynb.
+jupyter>=1.0

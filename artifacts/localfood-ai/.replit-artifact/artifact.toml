@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "LocalFood AI"
+description = "A polished college-demo web app where a real Python food agent searches a fictional Indian restaurant dataset, remembers dietary preferences across turns, and explains its plan, tool calls, filtering, and ranking."
+version = "1.0.0"
+id = "artifacts/localfood-ai"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20534
+
+[services.development]
+run = "pnpm --filter @workspace/localfood-ai run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/localfood-ai", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/localfood-ai/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20534"
+BASE_PATH = "/"
