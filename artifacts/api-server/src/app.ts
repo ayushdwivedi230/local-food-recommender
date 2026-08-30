@@ -12,7 +12,7 @@ const app: Express = express();
 // Works in both development and production (Render)
 const frontendDistPath = path.resolve(
   process.cwd(),
-  "artifacts/localfood-ai/dist/public"
+  "../localfood-ai/dist/public"
 );
 
 app.use(
