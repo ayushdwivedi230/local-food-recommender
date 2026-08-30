@@ -13,6 +13,95 @@ CITIES = ["Jalandhar", "Phagwara", "Ludhiana", "Amritsar", "Chandigarh", "Delhi"
 CUISINES = ["Punjabi", "North Indian", "South Indian", "Chinese", "Italian", "Mughlai", "Street Food", "Fast Food", "Cafe", "Jain"]
 LOCATION_ALIASES = {"koramangala": "Bengaluru", "indiranagar": "Bengaluru"}
 
+# ---------------------------------------------------------------------------
+# Intent classification — keeps greetings and help requests out of the
+# restaurant-search loop without changing any existing food-request logic.
+# ---------------------------------------------------------------------------
+
+_GREETING_PATTERNS = re.compile(
+    r"^\s*(hi+|hello+|hey+|howdy|good\s+(morning|afternoon|evening|day)|namaste|namaskar|sat\s+sri\s+akal)\b",
+    re.IGNORECASE,
+)
+_CAPABILITY_PATTERNS = re.compile(
+    r"\b(what\s+can\s+you\s+do|what\s+do\s+you\s+do|how\s+do\s+you\s+work|help|capabilities|features|tell\s+me\s+about\s+yourself|about\s+you)\b",
+    re.IGNORECASE,
+)
+_HUNGRY_PATTERNS = re.compile(
+    r"^\s*(i'?m?\s+hungry|feeling\s+hungry|starving|i\s+want\s+to\s+eat|i\s+need\s+food)\s*[!.?]*\s*$",
+    re.IGNORECASE,
+)
+_FOOD_REQUEST_PATTERNS = re.compile(
+    r"\b(restaurant|food|eat|hungry|cuisine|recommend|find|search|veg|non.?veg|diet|spicy|budget|"
+    + "|".join(city.casefold() for city in CITIES)
+    + "|"
+    + "|".join(c.casefold() for c in CUISINES)
+    + r")\b",
+    re.IGNORECASE,
+)
+
+
+def _classify_intent(message: str) -> str:
+    """Return one of: 'greeting', 'capability', 'hungry', 'food', 'preference'.
+
+    'food' and 'preference' both feed into the agentic search loop.
+    Everything else gets a short conversational reply with no tool calls.
+    """
+    text = message.strip()
+    if _GREETING_PATTERNS.match(text):
+        return "greeting"
+    if _CAPABILITY_PATTERNS.search(text):
+        return "capability"
+    if _HUNGRY_PATTERNS.match(text):
+        return "hungry"
+    return "food"  # default — run the full agentic loop
+
+
+def _conversational_response(session_id: str, intent: str, message: str, started: float) -> dict[str, Any]:
+    """Build a lightweight non-agentic response for greetings and help."""
+    memory = get_memory(session_id)
+    if intent == "greeting":
+        reply = (
+            "Hi there! 👋 I'm LocalFood AI — your local food recommender. "
+            "Tell me your city, preferred cuisine, or dietary needs and I'll find the best options for you. "
+            "Try: \"I'm vegetarian and I want Punjabi food in Jalandhar.\""
+        )
+        label = "Greeting"
+        detail = "Recognised a greeting — no restaurant search needed."
+    elif intent == "capability":
+        reply = (
+            "Here's what I can do:\n\n"
+            "🔍 **find_restaurants(city)** — searches the local restaurant index for a city\n"
+            "🍽️ **filter_by_cuisine(type)** — narrows those results to a specific cuisine\n"
+            "🧠 **Memory** — I remember your diet, cuisine preference, spice level, and budget across turns\n"
+            "🛡️ **Dietary guardrail** — I never recommend a restaurant that violates your dietary requirement\n"
+            "📊 **Ranking** — I score each safe result on cuisine match, diet, rating, budget, and distance\n\n"
+            "Try: \"I'm vegetarian and I like Punjabi food in Jalandhar.\""
+        )
+        label = "Capability query"
+        detail = "User asked what the agent can do — returned capability summary without calling any tools."
+    else:  # hungry
+        reply = (
+            "I can help with that! Which city are you in? "
+            "You can also tell me your cuisine preference, diet (vegetarian / vegan / Jain), "
+            "spice level, or budget and I'll search the local index for you."
+        )
+        label = "Hunger signal"
+        detail = "User is hungry but provided no location or preference — asking for details."
+
+    activity = [
+        _event("understand", "thought", "Understanding your request", detail),
+        _event("intent", "decision", label, "No restaurant tools needed for this message type."),
+    ]
+    trace = [
+        _trace(1, "Intent", "intent", f'User said: "{message.strip()}" — classified as {intent}.'),
+        _trace(2, "Decision", "decision", f"Agent chose conversational reply; skipped find_restaurants and filter_by_cuisine."),
+    ]
+    return _response(session_id, reply, memory, activity, trace, [], 0, 0, 0, started)
+
+
+# ---------------------------------------------------------------------------
+# Preference extraction helpers
+# ---------------------------------------------------------------------------
 
 def _event(event_id: str, kind: str, label: str, detail: str, status: str = "complete") -> dict[str, str]:
     return {"id": event_id, "kind": kind, "label": label, "detail": detail, "status": status}
@@ -125,8 +214,22 @@ def _rank(restaurants: list[dict[str, Any]], preferences: dict[str, Any]) -> lis
     return sorted(ranked, key=lambda item: (-item["score"], -item["rating"], item["distance_km"]))
 
 
+# ---------------------------------------------------------------------------
+# Main agent entry point
+# ---------------------------------------------------------------------------
+
 def run_agent(session_id: str, message: str) -> dict[str, Any]:
     started = time.perf_counter()
+
+    # ── Intent gate ─────────────────────────────────────────────────────────
+    # Classify before doing anything else. Greetings, help requests, and
+    # "I'm hungry" prompts get a friendly reply without calling any tools.
+    # Food/preference requests fall through to the full agentic loop below.
+    intent = _classify_intent(message.strip())
+    if intent in ("greeting", "capability", "hungry"):
+        return _conversational_response(session_id, intent, message, started)
+    # ── End intent gate ──────────────────────────────────────────────────────
+
     memory_before = get_memory(session_id)
     memory, detected = _extract_preferences(message.strip(), memory_before)
     activity = [
@@ -134,7 +237,7 @@ def run_agent(session_id: str, message: str) -> dict[str, Any]:
         _event("memory", "observation", "Memory read", " + ".join(f"{key}: {value}" for key, value in memory_before.items() if value and key != "updatedAt") or "No preferences stored yet."),
     ]
     trace = [
-        _trace(1, "Intent", "intent", f"User asked: “{message.strip()}”"),
+        _trace(1, "Intent", "intent", f"User asked: \"{message.strip()}\""),
         _trace(2, "Memory", "memory", f"Read memory: {memory_before}"),
     ]
 
@@ -152,8 +255,11 @@ def run_agent(session_id: str, message: str) -> dict[str, Any]:
     else:
         memory = save_memory(session_id, memory)
 
+    # Re-read the full merged memory so cross-turn preferences (cuisine, diet
+    # set in a previous turn) are always available for this turn's search.
     requested_city = memory.get("location")
     requested_cuisine = memory.get("preferredCuisine")
+
     if conflict:
         reply = "I noticed a conflict: your remembered preference is vegetarian, but this turn asks for non-vegetarian food. I have not recommended anything yet—tell me if you'd like me to update that dietary preference."
         activity.append(_event("conflict", "warning", "Dietary conflict detected", "Hard dietary constraints prevent an unsafe recommendation."))
@@ -162,7 +268,7 @@ def run_agent(session_id: str, message: str) -> dict[str, Any]:
 
     if not requested_city:
         if detected:
-            reply = "Got it — I’ll remember those preferences. Which city should I search in?"
+            reply = "Got it — I'll remember those preferences. Which city should I search in?"
         else:
             reply = "Sure. Which city should I search in? You can also mention a cuisine, diet, spice level, or budget."
         activity.append(_event("clarify", "decision", "Need one detail", "A city is required before the restaurant search can begin."))
@@ -172,7 +278,7 @@ def run_agent(session_id: str, message: str) -> dict[str, Any]:
     activity.append(_event("plan", "decision", "Plan formed", "Search the city, narrow cuisine if needed, enforce diet, then rank safe options."))
     trace.append(_trace(4, "Plan", "plan", "The next action is selected from the current state: search first, then inspect the observation before choosing another tool."))
     try:
-        activity.append(_event("find-call", "tool", "Calling find_restaurants()", f'Searching the fictional local index for {requested_city}.'))
+        activity.append(_event("find-call", "tool", "Calling find_restaurants()", f"Searching the local index for {requested_city}."))
         trace.append(_trace(5, "Tool Call", "tool", "The agent chose the search tool because a city is available.", "find_restaurants", {"city": requested_city}))
         search_results = find_restaurants(requested_city)
         trace[-1]["result"] = f"{len(search_results)} restaurants found"
@@ -184,9 +290,9 @@ def run_agent(session_id: str, message: str) -> dict[str, Any]:
         return _response(session_id, "Restaurant search temporarily failed. Please try again.", memory, activity, trace, [], 0, 0, 0, started)
 
     if not search_results:
-        activity.append(_event("no-city", "warning", "No restaurants found", f"The fictional dataset has no entries for {requested_city}."))
+        activity.append(_event("no-city", "warning", "No restaurants found", f"The dataset has no entries for {requested_city}."))
         trace.append(_trace(7, "Agent Decision", "decision", "No search results were returned, so the loop ends honestly without a second tool call."))
-        return _response(session_id, f"I couldn’t find restaurants in {requested_city}. Try Jalandhar, Phagwara, Ludhiana, Amritsar, Chandigarh, Delhi, or Bengaluru.", memory, activity, trace, [], 0, 0, 0, started)
+        return _response(session_id, f"I couldn't find restaurants in {requested_city}. Try Jalandhar, Phagwara, Ludhiana, Amritsar, Chandigarh, Delhi, or Bengaluru.", memory, activity, trace, [], 0, 0, 0, started)
 
     cuisine_results = search_results
     if requested_cuisine:

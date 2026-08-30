@@ -33,7 +33,7 @@ import {
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
+import { Route, Switch, Router as WouterRouter } from 'wouter';
 
 const queryClient = new QueryClient();
 
@@ -69,7 +69,7 @@ function Home() {
     {
       id: 'welcome',
       role: 'assistant',
-      text: 'Tell me what sounds good, where you are, or what you want to avoid. I’ll search the local list and show you how I got there.',
+      text: 'Tell me what sounds good, where you are, or what you want to avoid. I'll search the local list and show you how I got there.',
     },
   ]);
   const [clearedNotice, setClearedNotice] = useState(false);
@@ -177,7 +177,7 @@ function Home() {
             <Compass size={15} className="text-[hsl(var(--accent))]" />
             <span>Local discovery lab</span>
             <span className="hidden text-[hsl(var(--border))] sm:inline">/</span>
-            <span className="hidden font-normal sm:inline">Bengaluru demo dataset</span>
+            <span className="hidden font-normal sm:inline">Punjab &amp; North India demo dataset</span>
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--card)/.65)] px-3 py-1.5 text-[11px] font-semibold text-[hsl(var(--muted-foreground))] sm:flex">
@@ -198,7 +198,7 @@ function Home() {
                 Food that feels<br /><span className="text-[hsl(var(--accent))]">like your place.</span>
               </h1>
               <p className="mt-4 max-w-[570px] text-[15px] leading-7 text-[hsl(var(--muted-foreground))]">
-                A little context goes a long way. Ask naturally and I’ll turn your mood, map, and memory into a short list worth leaving the hostel for.
+                A little context goes a long way. Ask naturally and I'll turn your mood, map, and memory into a short list worth leaving the hostel for.
               </p>
             </div>
 
@@ -218,7 +218,7 @@ function Home() {
                   }}
                   maxLength={1000}
                   rows={3}
-                  placeholder="Try “I’m near Indiranagar, want something not too spicy…”"
+                  placeholder="Try "I'm vegetarian and I like Punjabi food in Jalandhar…""
                   className="w-full resize-none border-0 bg-transparent px-2 py-1 text-[16px] leading-7 text-[hsl(var(--foreground))] outline-none placeholder:text-[hsl(var(--muted-foreground)/.64)]"
                 />
                 <div className="flex items-center justify-between border-t border-[hsl(var(--border)/.72)] pt-3">
@@ -270,7 +270,7 @@ function Home() {
                   <div key={line.id} className={`flex ${line.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div data-testid={`message-${line.role}-${line.id}`} className={`max-w-[88%] rounded-2xl px-4 py-3 text-[14px] leading-6 ${line.role === 'user' ? 'rounded-br-md bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]' : 'rounded-bl-md border border-[hsl(var(--border))] bg-[hsl(var(--card)/.72)] text-[hsl(var(--foreground)/.84)]'}`}>
                       {line.role === 'assistant' && <div className="lf-mono mb-1.5 text-[9px] uppercase tracking-[0.15em] text-[hsl(var(--accent))]">LocalFood AI</div>}
-                      {line.text}
+                      <span style={{ whiteSpace: 'pre-line' }}>{line.text}</span>
                     </div>
                   </div>
                 ))}
@@ -283,7 +283,7 @@ function Home() {
                 {runAgent.isError && (
                   <div data-testid="status-agent-error" className="flex items-start gap-3 rounded-2xl border border-[hsl(var(--accent)/.35)] bg-[hsl(var(--accent)/.08)] px-4 py-3 text-sm text-[hsl(var(--foreground))]">
                     <CircleAlert size={17} className="mt-0.5 shrink-0 text-[hsl(var(--accent))]" />
-                    <div><strong>That search didn’t land.</strong><div className="mt-0.5 text-[hsl(var(--muted-foreground))]">Check the agent connection and try again.</div></div>
+                    <div><strong>That search didn't land.</strong><div className="mt-0.5 text-[hsl(var(--muted-foreground))]">Check the agent connection and try again.</div></div>
                   </div>
                 )}
               </div>
@@ -367,21 +367,28 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Memory panel — shows only non-null values as coloured pills; a neutral
+// placeholder when nothing has been stored yet.
+// ---------------------------------------------------------------------------
 function MemoryPanel({ memory, loading, error, cleared, onClear, clearing }: { memory: MemoryState; loading: boolean; error: boolean; cleared: boolean; onClear: () => void; clearing: boolean }) {
-  const entries = useMemo<Array<[string, string | null]>>(() => [
-    ['Diet', memory.diet],
-    ['Cuisine pull', memory.preferredCuisine],
-    ['Avoiding', memory.dislikedCuisine],
-    ['Spice', memory.spicePreference],
-    ['Budget', memory.budget ? `₹${memory.budget} / meal` : null],
-    ['Area', memory.location],
+  const entries = useMemo<Array<{ label: string; value: string | null; color: string }>>(() => [
+    { label: 'Diet', value: memory.diet, color: 'bg-[hsl(147_48%_38%/.15)] text-[hsl(147_48%_30%)] border-[hsl(147_48%_38%/.3)]' },
+    { label: 'Cuisine', value: memory.preferredCuisine, color: 'bg-[hsl(42_89%_62%/.18)] text-[hsl(25_29%_28%)] border-[hsl(42_89%_62%/.4)]' },
+    { label: 'Avoiding', value: memory.dislikedCuisine, color: 'bg-[hsl(var(--accent)/.12)] text-[hsl(15_72%_40%)] border-[hsl(var(--accent)/.3)]' },
+    { label: 'Spice', value: memory.spicePreference, color: 'bg-[hsl(15_72%_61%/.12)] text-[hsl(15_60%_38%)] border-[hsl(15_72%_61%/.3)]' },
+    { label: 'Budget', value: memory.budget ? `₹${memory.budget}/meal` : null, color: 'bg-[hsl(198_43%_47%/.12)] text-[hsl(198_43%_30%)] border-[hsl(198_43%_47%/.3)]' },
+    { label: 'City', value: memory.location, color: 'bg-[hsl(277_24%_54%/.12)] text-[hsl(277_24%_35%)] border-[hsl(277_24%_54%/.3)]' },
   ], [memory]);
+
+  const activeEntries = entries.filter((e) => e.value !== null);
+
   return (
     <section className="lf-card lf-enter lf-enter-delay-2 rounded-[22px] p-5">
       <div className="mb-4 flex items-start justify-between">
         <div>
           <div className="mb-1 flex items-center gap-2"><Leaf size={16} className="text-[hsl(147_48%_38%)]" /><h2 className="text-sm font-bold">What I remember</h2></div>
-          <p className="text-[11px] text-[hsl(var(--muted-foreground))]">Preferences follow you across turns.</p>
+          <p className="text-[11px] text-[hsl(var(--muted-foreground))]">Preferences carry across turns automatically.</p>
         </div>
         <button data-testid="button-clear-memory" onClick={onClear} disabled={clearing || loading} className="group flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] font-semibold text-[hsl(var(--muted-foreground))] transition hover:bg-[hsl(var(--accent)/.1)] hover:text-[hsl(var(--accent-foreground))] disabled:opacity-45" title="Clear remembered preferences">
           <Trash2 size={13} /> {clearing ? 'Clearing' : 'Clear'}
@@ -390,15 +397,35 @@ function MemoryPanel({ memory, loading, error, cleared, onClear, clearing }: { m
       {error ? (
         <div data-testid="status-memory-error" className="flex gap-2 rounded-xl bg-[hsl(var(--accent)/.08)] p-3 text-[11px] text-[hsl(var(--muted-foreground))]"><CircleAlert size={14} className="shrink-0 text-[hsl(var(--accent))]" /> Memory is unavailable right now.</div>
       ) : loading ? (
-        <div data-testid="status-memory-loading" className="grid grid-cols-2 gap-2">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-12 animate-pulse rounded-xl bg-[hsl(var(--muted)/.7)]" />)}</div>
+        <div data-testid="status-memory-loading" className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-7 animate-pulse rounded-full bg-[hsl(var(--muted)/.7)]" />)}</div>
+      ) : activeEntries.length === 0 ? (
+        <div data-testid="memory-empty-state" className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-[hsl(var(--border))] px-4 py-5 text-center">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[hsl(var(--muted)/.6)]"><Leaf size={14} className="text-[hsl(var(--muted-foreground))]" /></div>
+          <p className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))]">Nothing stored yet</p>
+          <p className="text-[10px] text-[hsl(var(--muted-foreground)/.7)]">Mention your diet, cuisine, or city and I'll remember it.</p>
+        </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-2">
-            {entries.map(([label, value]) => <div data-testid={`memory-${label.toLowerCase().replace(/\s/g, '-')}`} key={label} className="rounded-xl bg-[hsl(var(--muted)/.56)] px-3 py-2.5"><div className="lf-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">{label}</div><div className={`mt-1 truncate text-xs font-semibold ${value ? 'text-[hsl(var(--foreground))]' : 'text-[hsl(var(--muted-foreground)/.68)]'}`}>{value ?? 'Not set yet'}</div></div>)}
+          <div className="flex flex-wrap gap-2">
+            {activeEntries.map(({ label, value, color }) => (
+              <div
+                key={label}
+                data-testid={`memory-${label.toLowerCase().replace(/\s/g, '-')}`}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold ${color}`}
+              >
+                <span className="lf-mono text-[9px] uppercase tracking-[0.1em] opacity-70">{label}</span>
+                <span>{value}</span>
+              </div>
+            ))}
           </div>
-          {cleared && <div data-testid="status-memory-cleared" className="mt-3 flex items-center gap-2 text-[11px] font-semibold text-[hsl(147_48%_35%)]"><CircleCheck size={14} /> Memory cleared for this session.</div>}
+          {entries.filter((e) => e.value === null).length > 0 && (
+            <p className="mt-3 text-[10px] text-[hsl(var(--muted-foreground)/.6)]">
+              {entries.filter((e) => e.value === null).map((e) => e.label).join(' · ')} not set
+            </p>
+          )}
         </>
       )}
+      {cleared && <div data-testid="status-memory-cleared" className="mt-3 flex items-center gap-2 text-[11px] font-semibold text-[hsl(147_48%_35%)]"><CircleCheck size={14} /> Memory cleared for this session.</div>}
     </section>
   );
 }
@@ -421,64 +448,101 @@ function RecommendationCard({ item, index }: { item: Recommendation; index: numb
             <span className="flex items-center gap-1.5"><MapPin size={13} className="text-[hsl(var(--accent))]" /> {item.distanceKm.toFixed(1)} km</span>
             <span className="flex items-center gap-1.5"><BadgeIndianRupee size={13} className="text-[hsl(147_48%_38%)]" /> {item.priceRange} · ₹{item.averagePrice}</span>
             <span className="flex items-center gap-1.5"><Zap size={13} className="text-[hsl(var(--secondary-foreground))]" /> {item.spiceLevel}</span>
-             <span className="ml-auto flex items-center gap-1 text-[hsl(147_48%_35%)]"><span className="h-1.5 w-1.5 rounded-full bg-[hsl(147_48%_42%)]" /> {Math.round(item.score)} match</span>
+            <span className="ml-auto flex items-center gap-1 text-[hsl(147_48%_35%)]"><span className="h-1.5 w-1.5 rounded-full bg-[hsl(147_48%_42%)]" /> {Math.round(item.score)} match</span>
           </div>
           <div className="mt-3 rounded-lg bg-[hsl(var(--muted)/.5)] px-3 py-2 text-[11px] leading-5 text-[hsl(var(--foreground)/.68)]"><span className="font-bold text-[hsl(var(--foreground))]">Why here:</span> {item.reason}</div>
-           <div className="mt-3 flex flex-wrap items-center gap-2">
-             <button
-               type="button"
-               data-testid={`button-why-${item.id}`}
-               onClick={() => setShowWhy((current) => !current)}
-               className="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-[10px] font-bold text-[hsl(var(--foreground)/.72)] transition hover:border-[hsl(var(--accent)/.55)] hover:bg-[hsl(var(--accent)/.08)]"
-             >
-               {showWhy ? 'Hide score details' : 'Why this?'}
-             </button>
-             <button
-               type="button"
-               data-testid={`button-select-${item.id}`}
-               aria-pressed={selected}
-               onClick={() => setSelected((current) => !current)}
-               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[10px] font-bold transition ${selected ? 'bg-[hsl(147_48%_38%)] text-white' : 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:-translate-y-0.5'}`}
-             >
-               {selected && <Check size={12} />} {selected ? 'Selected' : 'Select'}
-             </button>
-           </div>
-           {showWhy && (
-             <div data-testid={`details-score-${item.id}`} className="mt-2 grid grid-cols-3 gap-2 text-[10px] text-[hsl(var(--muted-foreground))]">
-               {Object.entries(item.scoreBreakdown).map(([factor, value]) => (
-                 <div key={factor} className="rounded-md bg-[hsl(var(--card)/.8)] px-2 py-1.5">
-                   <div className="uppercase tracking-[0.08em]">{factor}</div>
-                   <div className="mt-0.5 font-bold text-[hsl(var(--foreground))]">{Math.round(value * 100)} pts</div>
-                 </div>
-               ))}
-             </div>
-           )}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-testid={`button-why-${item.id}`}
+              onClick={() => setShowWhy((current) => !current)}
+              className="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-[10px] font-bold text-[hsl(var(--foreground)/.72)] transition hover:border-[hsl(var(--accent)/.55)] hover:bg-[hsl(var(--accent)/.08)]"
+            >
+              {showWhy ? 'Hide score details' : 'Why this?'}
+            </button>
+            <button
+              type="button"
+              data-testid={`button-select-${item.id}`}
+              aria-pressed={selected}
+              onClick={() => setSelected((current) => !current)}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[10px] font-bold transition ${selected ? 'bg-[hsl(147_48%_38%)] text-white' : 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:-translate-y-0.5'}`}
+            >
+              {selected && <Check size={12} />} {selected ? 'Selected' : 'Select'}
+            </button>
+          </div>
+          {showWhy && (
+            <div data-testid={`details-score-${item.id}`} className="mt-2 grid grid-cols-3 gap-2 text-[10px] text-[hsl(var(--muted-foreground))]">
+              {Object.entries(item.scoreBreakdown).map(([factor, value]) => (
+                <div key={factor} className="rounded-md bg-[hsl(var(--card)/.8)] px-2 py-1.5">
+                  <div className="uppercase tracking-[0.08em]">{factor}</div>
+                  <div className="mt-0.5 font-bold text-[hsl(var(--foreground))]">{Math.round(value * 100)} pts</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </article>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Trace panel — collapsed by default to keep internal reasoning off-screen.
+// Professor / viva can expand it with one click.
+// ---------------------------------------------------------------------------
 function TracePanel({ trace, stats }: { trace: TraceStep[]; stats?: AgentResponse['stats'] }) {
+  const [open, setOpen] = useState(false);
+
   return (
     <section className="lf-card lf-enter lf-enter-delay-3 overflow-hidden rounded-[22px]">
-      <div className="border-b border-[hsl(var(--border)/.7)] px-5 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2"><RefreshCw size={15} className="text-[hsl(var(--accent))]" /><h2 className="text-sm font-bold">Decision trace</h2></div>
-          {stats && <span className="lf-mono text-[10px] text-[hsl(var(--muted-foreground))]">{stats.afterCuisine} survived filters</span>}
+      <button
+        type="button"
+        data-testid="button-trace-toggle"
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex w-full items-center justify-between border-b border-[hsl(var(--border)/.7)] px-5 py-4 text-left transition hover:bg-[hsl(var(--muted)/.3)]"
+        aria-expanded={open}
+      >
+        <div>
+          <div className="flex items-center gap-2">
+            <RefreshCw size={15} className="text-[hsl(var(--accent))]" />
+            <h2 className="text-sm font-bold">Decision / Agent trace</h2>
+            <span className="lf-mono rounded-full bg-[hsl(var(--muted)/.7)] px-2 py-0.5 text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--muted-foreground))]">
+              {trace.length} steps
+            </span>
+          </div>
+          <p className="mt-1 text-[11px] text-[hsl(var(--muted-foreground))]">
+            PLAN → ACT → OBSERVE → DECIDE loop — expand for viva/professor review
+          </p>
         </div>
-        <p className="mt-1 text-[11px] text-[hsl(var(--muted-foreground))]">A transparent PLAN → ACT → OBSERVE → DECIDE loop.</p>
-      </div>
-      <div className="p-3">
-        {trace.length === 0 ? <div data-testid="empty-trace" className="px-3 py-5 text-center text-xs text-[hsl(var(--muted-foreground))]">No trace to show yet.</div> : trace.map((step) => <TraceRow key={step.step} step={step} />)}
-      </div>
+        <ChevronDown
+          size={16}
+          className={`shrink-0 text-[hsl(var(--muted-foreground))] transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {open && (
+        <div className="p-3">
+          {stats && (
+            <div className="mb-3 flex flex-wrap gap-3 rounded-xl bg-[hsl(var(--muted)/.4)] px-4 py-3 text-[10px] font-semibold text-[hsl(var(--muted-foreground))]">
+              <span>Searched: <strong className="text-[hsl(var(--foreground))]">{stats.searched}</strong></span>
+              <span>After cuisine filter: <strong className="text-[hsl(var(--foreground))]">{stats.afterCuisine}</strong></span>
+              <span>After diet filter: <strong className="text-[hsl(var(--foreground))]">{stats.afterDiet}</strong></span>
+              <span>Elapsed: <strong className="text-[hsl(var(--foreground))]">{stats.elapsedMs}ms</strong></span>
+            </div>
+          )}
+          {trace.length === 0
+            ? <div data-testid="empty-trace" className="px-3 py-5 text-center text-xs text-[hsl(var(--muted-foreground))]">No trace to show yet.</div>
+            : trace.map((step) => <TraceRow key={step.step} step={step} />)
+          }
+        </div>
+      )}
     </section>
   );
 }
 
 function TraceRow({ step }: { step: TraceStep }) {
   const tone = step.type.toLowerCase();
-  const typeStyle = tone.includes('plan') ? 'bg-[hsl(var(--secondary)/.32)] text-[hsl(25_29%_30%)]' : tone.includes('act') ? 'bg-[hsl(198_43%_47%/.14)] text-[hsl(198_43%_36%)]' : tone.includes('observe') ? 'bg-[hsl(147_48%_42%/.14)] text-[hsl(147_48%_33%)]' : 'bg-[hsl(var(--accent)/.14)] text-[hsl(var(--accent-foreground))]';
+  const typeStyle = tone.includes('plan') ? 'bg-[hsl(var(--secondary)/.32)] text-[hsl(25_29%_30%)]' : tone.includes('act') || tone === 'tool' ? 'bg-[hsl(198_43%_47%/.14)] text-[hsl(198_43%_36%)]' : tone.includes('observe') || tone === 'observation' ? 'bg-[hsl(147_48%_42%/.14)] text-[hsl(147_48%_33%)]' : tone === 'filter' ? 'bg-[hsl(277_24%_54%/.14)] text-[hsl(277_24%_35%)]' : 'bg-[hsl(var(--accent)/.14)] text-[hsl(var(--accent-foreground))]';
   return (
     <details data-testid={`trace-step-${step.step}`} className="group rounded-xl px-3 py-3 transition open:bg-[hsl(var(--muted)/.48)]">
       <summary data-testid={`button-trace-${step.step}`} className="flex cursor-pointer list-none items-center gap-3 [&::-webkit-details-marker]:hidden">
@@ -489,6 +553,7 @@ function TraceRow({ step }: { step: TraceStep }) {
       <div className="ml-[79px] mt-3 border-l border-[hsl(var(--border))] pl-3 text-[11px] leading-5 text-[hsl(var(--muted-foreground))]">
         <p>{step.detail}</p>
         {step.tool && <div className="mt-2 flex items-center gap-1.5 font-semibold text-[hsl(var(--foreground)/.7)]"><Search size={12} /> {step.tool}</div>}
+        {step.arguments && <div className="mt-1 rounded-lg bg-[hsl(var(--muted)/.5)] px-2.5 py-2 font-mono text-[10px] text-[hsl(var(--foreground)/.72)]">{JSON.stringify(step.arguments)}</div>}
         {step.result && <div className="mt-2 rounded-lg bg-[hsl(var(--card))] px-2.5 py-2 text-[10px] text-[hsl(var(--foreground)/.72)]">{step.result}</div>}
       </div>
     </details>
