@@ -79,7 +79,7 @@ function Home() {
     {
       id: 'welcome',
       role: 'assistant',
-      text: 'Tell me what sounds good, where you are, or what you want to avoid. I'll search the local list and show you how I got there.',
+      text: "Tell me what sounds good, where you are, or what you want to avoid. I'll search the local list and show you how I got there.",
     },
   ]);
   const [clearedNotice, setClearedNotice] = useState(false);
@@ -228,7 +228,7 @@ function Home() {
                   }}
                   maxLength={1000}
                   rows={3}
-                  placeholder="Try "I'm vegetarian and I like Punjabi food in Jalandhar…""
+                  placeholder={`Try "I'm vegetarian and I like Punjabi food in Jalandhar…"`}
                   className="w-full resize-none border-0 bg-transparent px-2 py-1 text-[16px] leading-7 text-[hsl(var(--foreground))] outline-none placeholder:text-[hsl(var(--muted-foreground)/.64)]"
                 />
                 <div className="flex items-center justify-between border-t border-[hsl(var(--border)/.72)] pt-3">
