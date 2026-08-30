@@ -2,42 +2,65 @@
 
 ## Overview
 
-This guide covers deploying LocalFood AI to **Render.com** with:
-- Backend API service (Node.js + Python agent)
-- Frontend web service (React + Vite)
-- Automatic builds from GitHub pushes
+This guide covers deploying **LocalFood AI to Render.com** as a **single unified Web Service** that serves:
+- ✅ React + Vite frontend (UI)
+- ✅ Node.js + Express API backend
+- ✅ Python LocalFood agent
+- ✅ JSON-based session memory and restaurant data
+
+Everything runs in **one Render Web Service** for simplicity.
 
 ## Prerequisites
 
-1. **GitHub account** with the repository `ayushdwivedi230/local-food-recommender`
-2. **Render.com account** (free tier available)
-3. Repository is already public
+1. **GitHub account** with repository containing LocalFood AI code
+2. **Render.com account** (free tier available at https://render.com)
+3. Repository is **public** on GitHub
 
-## Step 1: Create Backend API Service
+## Architecture
+
+```
+Render Web Service (Node.js)
+├── Frontend (React + Vite) → Served as static files on /
+├── API Routes → /api/* (Express)
+├── Python Agent → Runs on backend for recommendations
+└── Session Memory → JSON files (restaurants.json, sessions.json)
+```
+
+**Key Benefit:** All requests go to the same origin, so no CORS issues, no environment variable complexity.
+
+---
+
+## Step 1: Create Render Web Service
 
 ### 1.1 Go to Render Dashboard
 - Visit https://dashboard.render.com
 - Click **"New+"** → **"Web Service"**
 
 ### 1.2 Connect GitHub Repository
-- Click **"Connect account"** (authorize Render to access GitHub)
-- Search for and select: `ayushdwivedi230/local-food-recommender`
+- Click **"Connect account"** and authorize Render to access GitHub
+- Search for and select your repository
 - Click **"Connect"**
 
-### 1.3 Configure Backend Service
+### 1.3 Configure the Service
 
 | Setting | Value |
 |---------|-------|
-| **Name** | `localfood-api` |
+| **Name** | `localfood-ai` |
 | **Environment** | `Node` |
 | **Region** | `Oregon` (or closest to you) |
 | **Branch** | `main` |
-| **Build Command** | `cd artifacts/api-server && pnpm install --frozen-lockfile && pnpm run build` |
+| **Build Command** | `cd artifacts/localfood-ai && pnpm install --frozen-lockfile && pnpm run build && cd ../api-server && pnpm install --frozen-lockfile && pnpm run build` |
 | **Start Command** | `node --enable-source-maps ./artifacts/api-server/dist/index.mjs` |
 | **Plan** | `Free` |
 
+**Build Command Explanation:**
+1. Build React frontend → outputs to `artifacts/localfood-ai/dist/public/`
+2. Build Node API server → outputs to `artifacts/api-server/dist/`
+3. The API server's Express app serves the frontend static files automatically
+
 ### 1.4 Environment Variables
-Click **"Advanced"** and add:
+
+Click **"Advanced"** and add these:
 
 ```
 NODE_ENV=production
@@ -45,175 +68,178 @@ LOCALFOOD_PYTHON=python3
 OPENAI_API_KEY=(leave blank for now)
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
+PORT=3000
 ```
 
+**Note:** No `VITE_API_URL` or `BASE_PATH` needed—the frontend makes API calls to the same origin.
+
 ### 1.5 Deploy
-Click **"Create Web Service"** → Wait 3-5 minutes for deployment
+Click **"Create Web Service"** and wait 5-10 minutes for the build to complete.
 
-**Note the API URL:** `https://localfood-api.onrender.com` (or similar)
-
----
-
-## Step 2: Create Frontend Web Service
-
-### 2.1 Create New Service
-- In Render dashboard, click **"New+"** → **"Web Service"** again
-- Connect GitHub (same account)
-- Select: `ayushdwivedi230/local-food-recommender`
-
-### 2.2 Configure Frontend Service
-
-| Setting | Value |
-|---------|-------|
-| **Name** | `localfood-web` |
-| **Environment** | `Node` |
-| **Region** | `Oregon` (same as backend) |
-| **Branch** | `main` |
-| **Build Command** | `cd artifacts/localfood-ai && pnpm install --frozen-lockfile && pnpm run build` |
-| **Start Command** | `cd artifacts/localfood-ai && pnpm run serve` |
-| **Plan** | `Free` |
-
-### 2.3 Environment Variables
-
-1. Click **"Advanced"** to expand environment variables
-2. Add the following (all required):
-
-| Key | Value |
-|-----|-------|
-| `VITE_API_URL` | `https://localfood-api.onrender.com` |
-| `PORT` | `3000` |
-| `BASE_PATH` | `/` |
-| `NODE_ENV` | `production` |
-
-**Important:** Replace `localfood-api` in the VITE_API_URL with your actual backend service URL from Step 1.
-
-### 2.4 Deploy
-Click **"Create Web Service"** → Wait 3-5 minutes
-
-**Your app is now live at:** `https://localfood-web.onrender.com`
+**Your app will be live at:** `https://localfood-ai.onrender.com` (or your custom domain)
 
 ---
 
-## Step 3: Verify Deployment
+## Step 2: Verify Deployment
 
-1. Open `https://localfood-web.onrender.com`
-2. You should see the LocalFood AI interface
+### 2.1 Test the Frontend
+1. Open your service URL: `https://localfood-ai.onrender.com`
+2. You should see the **LocalFood AI chat interface**
 3. Try a search: *"I'm vegetarian and want Punjabi food in Jalandhar"*
 4. Verify the agent responds with recommendations
 
-### If you get API errors:
+### 2.2 Check Logs
+1. Click your service in Render Dashboard
+2. Scroll to **"Logs"** section
+3. Look for `Server listening on port 3000`
+4. API requests should appear in real-time
 
-1. Check backend API status in Render dashboard
-2. Verify `VITE_API_URL` environment variable in frontend service
-3. Check logs: Click service → Logs tab
+### 2.3 If You See "Cannot GET /"
+- **Build might still be in progress** (takes 5-10 minutes)
+- Click **"Events"** tab to check build status
+- Wait for build to complete and service to restart
+- Then refresh the page
+
+### 2.4 If API Calls Fail
+1. Check backend logs for Python errors
+2. Verify `LOCALFOOD_PYTHON=python3` is set in environment variables
+3. Check that restaurant data loads: Look for `restaurants.json` in logs
 
 ---
 
-## Step 4: API URL Configuration (Automatic)
+## Step 3: How It Works
 
-The frontend automatically reads the `VITE_API_URL` environment variable set in Step 2.3.
+### Frontend Static Files
+- React app builds to `artifacts/localfood-ai/dist/public/`
+- Express server serves these files as static content
+- Navigation routes (React Router) automatically handled via SPA fallback
 
-### If Frontend Can't Reach Backend:
+### API Routes
+- All `/api/*` requests are routed to Express handlers
+- Example: `POST /api/run-agent` → Python agent processes and returns recommendations
+- Same origin = no CORS issues, all requests go to your Render domain
 
-1. **Verify environment variables** are set correctly in frontend service settings
-   - Click `localfood-web` service → Environment tab
-   - Check that `VITE_API_URL` points to the correct backend URL
-   
-2. **Rebuild frontend** (Render will auto-do this on env var change)
-   - Click **"Manual Deploy"** → **"Deploy latest commit"**
-   - Or push a new commit to GitHub (Render auto-redeploys)
-
-3. **Check backend service status**
-   - Click `localfood-api` service
-   - Scroll to Logs section
-   - Verify service is running and responding
+### Python Agent
+- Runs inside the Node.js server process via subprocess calls
+- Processes food recommendations with diet constraints
+- Session memory persisted in `backend/data/sessions.json`
 
 ---
 
-## Services Deployed
+## Step 4: Auto-Deploy on Code Push
 
-✅ **Backend API**: Node.js + Python agent loop  
-✅ **Frontend**: React + Vite  
-✅ **Database**: Local JSON (restaurants.json in repo)  
-✅ **Memory**: JSON-backed session store
-
-## Monitoring & Logs
-
-### Backend Logs
-1. Render Dashboard → Click `localfood-api`
-2. Scroll to **"Logs"** section
-3. Watch real-time logs from all requests
-
-### Frontend Logs
-1. Render Dashboard → Click `localfood-web`
-2. Scroll to **"Logs"** section
-
-## Auto-Deploy on Push
-
-Both services have `autoDeploy: true` configured:
+Render automatically redeploys when you push to GitHub:
 
 ```bash
 git push origin main
 ```
 
-Render automatically:
-1. Detects the push
-2. Triggers builds
-3. Deploys new versions (2-5 minutes)
+**Render will:**
+1. Detect the push
+2. Trigger a new build (5-10 minutes)
+3. Deploy the new version with zero downtime
 
-No manual intervention needed!
-
-## Common Issues & Solutions
-
-### **"Cannot find module"**
-- Usually means missing dependencies
-- Solution: Clear Render cache and rebuild
-  1. Service settings → Clear build cache
-  2. Manual deploy or push new commit
-
-### **API returns 404**
-- Backend service might be sleeping (free tier sleeps after 15 min inactivity)
-- Solution: Make a request to wake it up, or upgrade to paid tier
-
-### **Frontend loads but can't search**
-- Check `VITE_API_URL` environment variable
-- Check backend service is running (check logs)
-- Browser console should show exact error
-
-### **Python agent errors**
-- Backend service needs Python 3
-- Render includes Python by default
-- Check backend logs for errors
-
-## Upgrade to Production (Optional)
-
-When ready for actual production:
-
-1. **Upgrade services from Free to Starter** ($7/month each)
-   - No more auto-sleep
-   - 1GB RAM
-   - Persistent storage option
-
-2. **Add a database** (PostgreSQL, MongoDB, etc.)
-   - Currently using local JSON files
-   - Works fine for demo, but file-based session store
-
-3. **Add SSL certificate** (auto-generated by Render)
-
-## Next Steps
-
-1. ✅ Push code to GitHub (done)
-2. ✅ Create Render.com account
-3. ✅ Deploy backend service
-4. ✅ Deploy frontend service
-5. ✅ Test the live application
-6. ✅ Share URL with instructor for viva
+No manual deployment needed!
 
 ---
 
-## Support
+## Troubleshooting
 
-- **Render Docs**: https://render.com/docs
-- **GitHub Issues**: https://github.com/ayushdwivedi230/local-food-recommender/issues
+### **Build Fails with "Cannot find module"**
+- **Cause:** Dependency installation failed
+- **Solution:**
+  1. Click service → **"Settings"**
+  2. Click **"Clear build cache"**
+  3. Click **"Manual Deploy"** → **"Deploy latest commit"**
 
-Good luck! 🚀
+### **"Cannot GET /" When You Open the URL**
+- **Cause:** Build not finished yet, or SPA fallback route not working
+- **Solution:**
+  1. Wait 5-10 minutes for build to complete
+  2. Check **"Events"** tab for build status
+  3. Check **"Logs"** tab for errors
+  4. Refresh the page once build is done
+
+### **API Calls Return 404**
+- **Cause:** Backend not running or `/api` routes not configured
+- **Solution:**
+  1. Check logs for `Server listening on port 3000`
+  2. Verify build completed successfully
+  3. Check backend error logs
+
+### **"Cannot find module '@workspace/...'"**
+- **Cause:** Workspace monorepo dependencies not installed
+- **Solution:**
+  1. Run `pnpm install` locally
+  2. Check `pnpm-workspace.yaml` exists
+  3. Build commands must run in correct order
+
+### **Python Agent Errors in Logs**
+- **Cause:** Python 3 not found or agent code issue
+- **Solution:**
+  1. Verify `LOCALFOOD_PYTHON=python3` environment variable
+  2. Check backend logs for specific Python errors
+  3. Test locally: `python -m py_compile backend/*.py`
+
+### **Service Goes to Sleep (Free Tier)**
+- **Cause:** Free tier services spin down after 15 minutes of inactivity
+- **Solution:**
+  1. Make a request to wake the service
+  2. Or upgrade to **Starter** tier ($7/month) for persistent service
+
+---
+
+## Production Checklist
+
+When ready for production use:
+
+- [ ] Set `NODE_ENV=production` ✅ (already configured)
+- [ ] Add valid `OPENAI_API_KEY` if using real LLM
+- [ ] Upgrade from Free to Starter tier (no auto-sleep)
+- [ ] Add custom domain name (optional)
+- [ ] Enable automatic backups for session data
+- [ ] Monitor service logs regularly
+
+---
+
+## Services Included
+
+✅ **Frontend**: React 19 + Vite + Tailwind CSS  
+✅ **Backend API**: Node.js + Express  
+✅ **AI Agent**: Python recommendation engine  
+✅ **Data**: JSON files (restaurants, session memory)  
+✅ **Logging**: Structured JSON logs via Pino  
+
+## Architecture Diagram
+
+```
+Browser
+  ↓
+https://localfood-ai.onrender.com
+  ↓
+Render Web Service (Node.js + Express)
+  ├── GET / → Serves index.html (React app loads)
+  ├── GET /assets/* → Serves JS/CSS/images
+  ├── GET * → SPA fallback (serves index.html for React routing)
+  ├── POST /api/run-agent → Python agent processes request
+  └── GET /api/health → Health check
+```
+
+## Next Steps
+
+1. **Deploy to Render** using the instructions above
+2. **Test the live app** at your Render URL
+3. **Share the URL** with others
+4. **Monitor logs** if issues occur
+5. **(Optional) Upgrade to paid tier** when ready for production use
+
+---
+
+## Questions?
+
+- Check **Render Documentation**: https://render.com/docs
+- Check **Service Logs** in Render Dashboard
+- Review **Build Output** in the Events tab
+- Test **locally first** before pushing to GitHub
+
+Happy deploying! 🚀
