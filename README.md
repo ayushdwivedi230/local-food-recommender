@@ -2,6 +2,12 @@
 
 LocalFood AI is a **single-agent, agentic local-food recommender** built for the T13 "Local Food Recommender" course assessment. It demonstrates a real plan → act → observe → decide loop using two Python tool functions that are called at runtime — no simulated output.
 
+## 🚀 Deploy Now
+
+**[Deploy to Render.com →](RENDER_DEPLOYMENT.md)** (5 minutes, free tier available)
+
+Or see [DEPLOYMENT.md](DEPLOYMENT.md) for other options (Replit, Railway, WSL).
+
 ## How it works
 
 The agent runs a transparent multi-step loop for every food request:

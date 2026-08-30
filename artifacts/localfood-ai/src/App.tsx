@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
@@ -25,6 +25,7 @@ import {
 import type { AgentResponse, MemoryState, Recommendation, ActivityEvent, TraceStep } from '@workspace/api-client-react';
 import {
   getGetAgentMemoryQueryKey,
+  setBaseUrl,
   useClearAgentMemory,
   useGetAgentMemory,
   useHealthCheck,
@@ -63,6 +64,15 @@ function Home() {
     sessionStorage.setItem('localfood-session', next);
     return next;
   });
+
+  // Configure API base URL for Render deployment
+  useEffect(() => {
+    const apiUrl = import.meta.env.VITE_API_URL;
+    if (apiUrl) {
+      setBaseUrl(apiUrl);
+    }
+  }, []);
+
   const [draft, setDraft] = useState('');
   const [response, setResponse] = useState<AgentResponse | null>(null);
   const [conversation, setConversation] = useState<ChatLine[]>([
