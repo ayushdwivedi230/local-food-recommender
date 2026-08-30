@@ -45,7 +45,7 @@ app.use("/api", router);
 app.use(express.static(frontendDistPath));
 
 // SPA fallback: serve index.html for all non-API routes
-app.get("*", (_req: Request, res: Response): void => {
+app.get("/*splat", (_req: Request, res: Response): void => {
   const indexPath = path.join(frontendDistPath, "index.html");
   
   if (!fs.existsSync(indexPath)) {
