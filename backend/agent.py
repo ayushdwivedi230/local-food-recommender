@@ -136,10 +136,32 @@ def _extract_preferences(message: str, existing: dict[str, Any]) -> tuple[dict[s
         if cuisine.casefold() in text:
             detected["preferredCuisine"] = cuisine
             break
-    disliked = re.search(r"(?:don't like|dislike|avoid|hate)\s+([a-z][a-z -]{2,24})", text)
+    # Explicit negative taste statements must be handled before positive
+    # keyword matching.  Otherwise "I don't like spicy food" contains the word
+    # "spicy" and would incorrectly become a positive spicy preference.
+    disliked = re.search(
+        r"(?:don't\s+like|do\s+not\s+like|dont\s+like|dislike|avoid|hate)\s+([a-z][a-z -]{2,24})",
+        text,
+    )
     if disliked:
-        detected["dislikedCuisine"] = disliked.group(1).strip().title()
-    if re.search(r"\b(mild|not\s+(?:too\s+)?spicy|less\s+spicy)\b", text):
+        disliked_value = disliked.group(1).strip().title()
+        # Only store a disliked cuisine when the captured phrase is actually
+        # one of the supported cuisines.  "spicy food" is not a cuisine.
+        known_cuisines = {c.casefold() for c in CUISINES}
+        if disliked_value.casefold() in known_cuisines:
+            detected["dislikedCuisine"] = disliked_value
+
+    negative_spice = re.search(
+        r"\b(?:don't|do not|dont|dislike|avoid|hate)\s+(?:like\s+)?"
+        r"(?:very\s+|too\s+)?spicy\b",
+        text,
+    )
+    if negative_spice:
+        detected["spicePreference"] = "mild"
+    elif re.search(
+        r"\b(mild|not\s+(?:too\s+)?spicy|less\s+spicy)\b",
+        text,
+    ):
         detected["spicePreference"] = "mild"
     elif re.search(r"\b(spicy|spice|hot|fiery)\b", text):
         detected["spicePreference"] = "spicy"
@@ -157,6 +179,23 @@ def _extract_preferences(message: str, existing: dict[str, Any]) -> tuple[dict[s
             detected["location"] = LOCATION_ALIASES.get(place.casefold(), place.title())
     updated.update(detected)
     return updated, detected
+
+
+def _memory_summary(memory: dict[str, Any]) -> str:
+    """Return only meaningful active preferences for the activity panel."""
+    labels = {
+        "diet": "diet",
+        "preferredCuisine": "cuisine",
+        "spicePreference": "spicePreference",
+        "budget": "budget",
+        "location": "location",
+    }
+    parts = []
+    for key, label in labels.items():
+        value = memory.get(key)
+        if value not in (None, "", []):
+            parts.append(f"{label}: {value}")
+    return " + ".join(parts) if parts else "No preferences stored yet."
 
 
 def _diet_compatible(restaurant: dict[str, Any], diet: str | None) -> bool:
@@ -182,7 +221,11 @@ def _rank(restaurants: list[dict[str, Any]], preferences: dict[str, Any]) -> lis
     for restaurant in restaurants:
         cuisine_match = 1.0 if cuisine and cuisine.casefold() in {item.casefold() for item in restaurant["cuisine"]} else 0.55
         budget_match = 1.0 if budget and restaurant["average_price"] <= budget else (0.65 if budget else 0.7)
-        taste_match = 1.0 if spice and restaurant["spice_level"] == ("high" if spice == "spicy" else "low") else (0.7 if spice else 0.7)
+        if spice:
+            desired_spice = "high" if spice == "spicy" else "low"
+            taste_match = 1.0 if restaurant["spice_level"] == desired_spice else 0.35
+        else:
+            taste_match = 0.7
         rating_score = restaurant["rating"] / 5
         distance_score = max(0.0, 1 - (restaurant["distance_km"] / 10))
         breakdown = {
@@ -234,13 +277,16 @@ def run_agent(session_id: str, message: str) -> dict[str, Any]:
     memory, detected = _extract_preferences(message.strip(), memory_before)
     activity = [
         _event("understand", "thought", "Understanding your request", "Parsing the latest message and retrieving remembered preferences."),
-        _event("memory", "observation", "Memory read", " + ".join(f"{key}: {value}" for key, value in memory_before.items() if value and key != "updatedAt") or "No preferences stored yet."),
+        _event("memory", "observation", "Memory read", _memory_summary(memory_before)),
     ]
     trace = [
         _trace(1, "Intent", "intent", f"User asked: \"{message.strip()}\""),
         _trace(2, "Memory", "memory", f"Read memory: {memory_before}"),
     ]
 
+    # Dietary requirements are hard constraints.  A new non-vegetarian
+    # request must not silently overwrite an already remembered vegetarian
+    # requirement in the same session.
     conflict = (
         memory_before.get("diet") == "vegetarian"
         and detected.get("diet") == "non-vegetarian"
@@ -318,7 +364,14 @@ def run_agent(session_id: str, message: str) -> dict[str, Any]:
         return _response(session_id, reply, memory, activity, trace, [], len(search_results), len(cuisine_results), 0, started)
 
     ranked = _rank(diet_results, memory)
-    activity.append(_event("rank", "decision", "Ranking remaining options", "Scoring cuisine, diet, rating, budget, taste, and distance."))
+    activity.append(
+        _event(
+            "rank",
+            "decision",
+            "Ranking remaining options",
+            "Scoring cuisine, diet, rating, budget, taste, and distance using the current remembered preferences.",
+        )
+    )
     activity.append(_event("ready", "success", "Recommendation ready", f"Ranked {len(ranked)} safe match(es)."))
     trace.append(_trace(10, "Final Recommendation", "result", "Returned ranked candidates with transparent score breakdowns."))
     best = ranked[0]
