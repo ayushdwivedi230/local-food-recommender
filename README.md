@@ -1,84 +1,1021 @@
 # LocalFood AI
 
-LocalFood AI is a **single-agent, agentic local-food recommender** built for the T13 "Local Food Recommender" course assessment. It demonstrates a real plan → act → observe → decide loop using two Python tool functions that are called at runtime — no simulated output.
+A single-agent, agentic local-food recommendation system built for the **T13 "Local Food Recommender" course assessment**.
 
-## 🚀 Deploy Now
+LocalFood AI demonstrates an explicit **Plan → Act → Observe → Decide** agent loop using real Python tool functions, persistent session memory, hard safety guardrails, transparent ranking, and explainable recommendations.
 
-**[Deploy to Render.com →](RENDER_DEPLOYMENT.md)** (5 minutes, free tier available)
+The system accepts natural-language food requests such as:
 
-Or see [DEPLOYMENT.md](DEPLOYMENT.md) for other options (Replit, Railway, WSL).
+> "I'm vegetarian, I want spicy Chinese food in Phagwara under ₹500."
 
-## How it works
+It extracts the user's preferences, remembers them across turns, searches the local restaurant dataset, filters the results, applies hard constraints, ranks the remaining safe candidates, and explains why the recommendation was selected.
 
-The agent runs a transparent multi-step loop for every food request:
+---
 
-1. **Read memory** — retrieve dietary preferences, cuisine, spice level, and budget from earlier turns
-2. **Plan** — decide which tools to call based on available state
-3. **Act** → call `find_restaurants(city)` — searches the local restaurant index for the requested city
-4. **Observe** — inspect the list of restaurants returned
-5. **Act** → call `filter_by_cuisine(type)` — narrows the observation to the preferred cuisine type
-6. **Observe** — inspect the filtered list
-7. **Apply dietary guardrail** — remove any restaurant that violates the user's remembered diet (vegetarian, vegan, Jain-friendly, or non-vegetarian)
-8. **Rank and recommend** — score remaining candidates on cuisine match, diet, rating, budget, taste, and distance; return the top 5
+## 🎯 Project Objective
 
-## Two required tools
+The objective of LocalFood AI is to demonstrate how an **agentic AI system** can solve a recommendation problem by maintaining state, deciding what action to take, observing tool results, applying constraints, and making a final decision.
 
-| Tool | Signature | Role |
-|------|-----------|------|
-| `find_restaurants` | `find_restaurants(city: str) → list` | Searches the local dataset for all restaurants in a given city |
-| `filter_by_cuisine` | `filter_by_cuisine(type: str) → list` | Narrows the previous tool's observation to a specific cuisine type |
+Unlike a simple static recommendation function, the system:
 
-Both tools are plain Python functions in [`backend/tools.py`](backend/tools.py). The agent calls them in sequence — `filter_by_cuisine` operates on the in-memory result of `find_restaurants`, so the correct ordering is enforced by design.
+- Understands natural-language requests
+- Maintains user preferences across conversation turns
+- Decides when restaurant tools are required
+- Calls tools at runtime
+- Uses the result of one tool as the input state for the next tool
+- Applies hard dietary and dislike constraints
+- Ranks only safe candidates
+- Provides transparent explanations
+- Handles missing data and tool failures honestly
+- Produces an observable agent trace for demonstration and viva
 
-## Memory
+---
 
-Preferences are persisted in a JSON-backed session store ([`backend/memory.py`](backend/memory.py)). The agent stores:
+# 🧠 Agent Architecture
 
-- **diet** — vegetarian / vegan-friendly / Jain-friendly / non-vegetarian
-- **preferredCuisine** — e.g. Punjabi, South Indian
-- **dislikedCuisine** — cuisines to avoid
-- **spicePreference** — mild or spicy
-- **budget** — maximum price per meal (₹)
-- **location** — last city searched
+The core architecture follows:
 
-On every subsequent turn, the agent reads this memory before planning. A dietary preference set in Turn 1 is used as a hard constraint in Turn 2, even if the user never mentions it again.
+```text
+                    User Message
+                         │
+                         ▼
+                ┌─────────────────┐
+                │ Intent Detection│
+                └────────┬────────┘
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+       Conversation             Food Request
+              │                     │
+              ▼                     ▼
+       Greeting / Help        Read Session Memory
+                                      │
+                                      ▼
+                            Extract Preferences
+                                      │
+                                      ▼
+                                    PLAN
+                                      │
+                                      ▼
+                         find_restaurants(city)
+                                      │
+                                      ▼
+                                   OBSERVE
+                                      │
+                                      ▼
+                         filter_by_cuisine(type)
+                                      │
+                                      ▼
+                                   OBSERVE
+                                      │
+                                      ▼
+                       Disliked Cuisine Guardrail
+                                      │
+                                      ▼
+                         Dietary Guardrail
+                                      │
+                                      ▼
+                                   RANK
+                                      │
+                                      ▼
+                                  DECIDE
+                                      │
+                                      ▼
+                         Recommendation + Trace
+                                      │
+                                      ▼
+                              Save Memory
 
-## Honest failure cases
+The agent therefore does not simply return a hard-coded restaurant.
 
-During development, three honest failure modes are intentionally preserved:
+It performs a sequence of state-dependent actions and uses the observations from those actions to determine the next step.
 
-1. **Unknown city** — `find_restaurants` returns an empty list; the agent stops and names the supported cities rather than fabricating results.
-2. **Dietary conflict** — if a new request contradicts a remembered dietary requirement (e.g. asking for non-vegetarian food after storing `diet=vegetarian`), the agent refuses before calling any tools and explains the conflict.
-3. **No matching result** — if the city has restaurants but none satisfy the cuisine + diet combination, the agent reports zero recommendations honestly. A live example: requesting Jain-friendly Chinese food in Jalandhar returns no match because the dataset has no such entry. The agent says so rather than lowering its standards silently.
-4. **Tool error** — the `find_restaurants` tool raises a `RuntimeError` when the city string is `"simulate tool error"`. The API converts that to a safe user message without fabricating restaurant data. This path is available for viva demonstration.
+🔄 Plan → Act → Observe → Decide Loop
 
-## Conversation handling
+For a typical request:
 
-The agent classifies every message before entering the agentic loop:
+"I'm vegetarian and I want Chinese food in Phagwara under ₹500."
 
-- **Greetings** ("Hello", "Hi", "Hey", "Namaste") → friendly reply, no tool calls
-- **Capability query** ("What can you do?", "Help") → structured list of tools, memory, and guardrails
-- **Food/preference requests** → full plan → act → observe → decide loop
+the agent performs the following process.
 
-## Run
+1. Read Memory
 
-```bash
+The agent retrieves the current session state from the JSON-backed memory store.
+
+Example:
+
+diet = vegetarian
+preferredCuisine = Chinese
+budget = 500
+location = Phagwara
+2. Extract New Preferences
+
+The latest message is analysed for:
+
+Diet
+Cuisine
+Disliked cuisine
+Spice preference
+Budget
+Location
+
+Only information present in the user's request is updated.
+
+Previously remembered preferences remain available for later turns.
+
+3. PLAN
+
+The agent creates a plan based on the current state.
+
+For example:
+
+Search Phagwara
+→ Filter Chinese
+→ Enforce vegetarian requirement
+→ Enforce budget
+→ Rank safe candidates
+
+If the user has explicitly disliked a cuisine, the plan also includes that exclusion.
+
+4. ACT — find_restaurants(city)
+
+The first required tool searches the restaurant dataset for the requested city.
+
+find_restaurants(city)
+
+Example:
+
+find_restaurants("Phagwara")
+
+returns the restaurants indexed for Phagwara.
+
+5. OBSERVE
+
+The agent inspects the result returned by the tool.
+
+It does not assume that restaurants exist.
+
+If zero restaurants are returned, the agent reports that honestly.
+
+6. ACT — filter_by_cuisine(type)
+
+If a cuisine was requested, the agent calls:
+
+filter_by_cuisine(type)
+
+This tool operates on the previous restaurant-search observation.
+
+Therefore the intended tool sequence is:
+
+find_restaurants(city)
+        ↓
+observation
+        ↓
+filter_by_cuisine(type)
+        ↓
+observation
+
+This demonstrates a real tool-dependent agent workflow rather than two unrelated function calls.
+
+7. Apply Hard Guardrails
+
+Before ranking, the agent removes restaurants that violate hard constraints.
+
+Dietary Guardrail
+
+Supported dietary preferences include:
+
+vegetarian
+vegan-friendly
+Jain-friendly
+non-vegetarian
+
+For example:
+
+User: I am vegetarian.
+
+A restaurant that does not satisfy the vegetarian requirement cannot become the final recommendation merely because it has a higher rating.
+
+8. Disliked Cuisine Guardrail
+
+Explicit negative preferences are also enforced.
+
+For example:
+
+User: I don't like Chinese food.
+
+The agent stores:
+
+dislikedCuisine = Chinese
+
+and excludes Chinese restaurants from the recommendation set.
+
+This prevents a previous positive preference from overriding an explicit negative preference.
+
+For example:
+
+Turn 1:
+I like Chinese.
+
+Turn 2:
+I don't like Chinese anymore.
+
+The explicit negative preference takes priority.
+
+9. Decide and Rank
+
+Only candidates that survive the hard constraints are ranked.
+
+The ranking considers:
+
+Cuisine match
+Dietary compatibility
+Rating
+Budget
+Spice preference
+Distance
+
+A transparent score breakdown is returned with every recommendation.
+
+🛡️ Safety and Guardrails
+
+LocalFood AI separates hard constraints from ranking preferences.
+
+Hard constraints are enforced before ranking.
+
+This is important because a restaurant should not receive a high recommendation score if it violates a user's dietary requirement or explicit exclusion.
+
+The main guardrails are:
+
+Dietary Safety
+Vegetarian
+Vegan
+Jain
+Non-vegetarian
+Cuisine Exclusion
+"I don't like Chinese."
+"I hate Mughlai."
+"Don't recommend Punjabi."
+
+These explicit negative preferences remove matching cuisines from the candidate set.
+
+Spice Negation
+
+The agent distinguishes between:
+
+"I like spicy food."
+
+and:
+
+"I don't like spicy food."
+
+The first produces:
+
+spicePreference = spicy
+
+while the second produces:
+
+spicePreference = mild
+
+This prevents the word spicy from being incorrectly interpreted as a positive preference when it occurs inside a negative statement.
+
+🧠 Persistent Session Memory
+
+LocalFood AI uses a small JSON-backed session memory implementation.
+
+The memory module is located at:
+
+backend/memory.py
+
+The stored session fields are:
+
+Field	Purpose
+diet	Dietary requirement
+preferredCuisine	Preferred cuisine
+dislikedCuisine	Cuisine to avoid
+spicePreference	Mild or spicy
+budget	Maximum preferred meal price
+location	Last known/search city
+updatedAt	Last memory update timestamp
+
+Memory is associated with a session_id.
+
+Therefore different conversations can maintain independent preference states.
+
+💬 Multi-Turn Conversation
+
+One of the main demonstrations of the project is cross-turn memory.
+
+Example:
+
+Turn 1:
+I am vegetarian and I like Punjabi food in Phagwara.
+
+The agent stores:
+
+diet = vegetarian
+preferredCuisine = Punjabi
+location = Phagwara
+
+Then the user says:
+
+Turn 2:
+Suggest something.
+
+The agent can reuse the remembered preferences instead of asking the user to repeat them.
+
+Another example:
+
+Turn 1:
+I want Chinese food in Phagwara under ₹500.
+
+Turn 2:
+I don't like spicy food.
+
+Turn 3:
+Suggest something.
+
+The final recommendation can use the combined session state:
+
+location = Phagwara
+cuisine = Chinese
+budget = ₹500
+spicePreference = mild
+🧩 Two Required Tools
+
+The project intentionally uses two simple Python tools.
+
+They are implemented in:
+
+backend/tools.py
+Tool 1 — find_restaurants
+find_restaurants(city: str) -> list
+Role
+
+Searches the local restaurant dataset for a city.
+
+Example:
+
+find_restaurants("Phagwara")
+
+The function reads:
+
+backend/data/restaurants.json
+
+and returns matching restaurant records.
+
+Tool 2 — filter_by_cuisine
+filter_by_cuisine(type: str) -> list
+Role
+
+Filters the previous restaurant-search observation by cuisine.
+
+Example:
+
+filter_by_cuisine("Chinese")
+
+The tool operates on the result produced by:
+
+find_restaurants(city)
+
+This establishes a meaningful dependency between tool calls.
+
+🍽️ Restaurant Dataset
+
+The project uses a local structured restaurant dataset.
+
+Each restaurant contains information such as:
+
+id
+name
+city
+cuisine
+diet
+rating
+average_price
+price_range
+spice_level
+distance_km
+description
+
+This allows the agent to perform deterministic filtering and ranking without fabricating external restaurant information.
+
+The dataset is intentionally local so the course demonstration can be:
+
+Reproducible
+Fast
+Deterministic
+Independent of external restaurant APIs
+📊 Recommendation Ranking
+
+After hard constraints are applied, remaining restaurants are scored.
+
+The ranking considers:
+
+Cuisine       → 30%
+Diet          → 30%
+Rating        → 15%
+Budget        → 10%
+Taste/Spice   → 10%
+Distance      → 5%
+
+The exact score is exposed through:
+
+score
+scoreBreakdown
+
+This makes the recommendation explainable.
+
+For example:
+
+Cuisine: 0.300
+Diet:    0.300
+Rating:  0.141
+Budget:  0.100
+Taste:   0.100
+Distance:0.043
+
+The final score is converted into a value out of 100.
+
+🔍 Explainable Recommendations
+
+The agent does not only return a restaurant name.
+
+It also provides a reason such as:
+
+Recommended because it matches your Chinese preference,
+is compatible with a vegetarian diet,
+has a 4.1 rating,
+fits your ₹500 budget,
+and it's only 3.1 km away.
+
+This makes the recommendation easier to understand during both normal use and the course demonstration.
+
+🗺️ Supported Locations
+
+The current local dataset supports:
+
+Jalandhar
+Phagwara
+Ludhiana
+Amritsar
+Chandigarh
+Delhi
+Bengaluru
+
+Common aliases are also supported.
+
+For example:
+
+Bangalore → Bengaluru
+Koramangala → Bengaluru
+Indiranagar → Bengaluru
+
+Unknown locations are not fabricated.
+
+🍜 Supported Cuisines
+
+The current supported cuisine vocabulary includes:
+
+Punjabi
+North Indian
+South Indian
+Chinese
+Italian
+Mughlai
+Street Food
+Fast Food
+Cafe
+Jain
+
+Common natural-language forms such as:
+
+Chinese food
+Punjabi food
+Italian food
+North Indian food
+
+are normalized to the supported cuisine names.
+
+💰 Budget Understanding
+
+The agent understands common budget expressions such as:
+
+under ₹500
+below ₹500
+less than ₹500
+up to ₹500
+within ₹500
+budget ₹500
+
+The extracted budget is stored in session memory and contributes to ranking.
+
+🌶️ Spice Preference
+
+The agent supports positive and negative spice preferences.
+
+Positive
+I like spicy food.
+I want something hot.
+I want spicy food.
+
+Stored as:
+
+spicePreference = spicy
+Negative
+I don't like spicy food.
+I want less spicy food.
+I don't want too much spice.
+
+Stored as:
+
+spicePreference = mild
+
+This distinction is handled before positive keyword matching.
+
+👋 Conversation Handling
+
+The system first determines whether the message requires the restaurant agent.
+
+Greetings
+
+Examples:
+
+Hi
+Hello
+Hey
+Namaste
+Good morning
+
+These receive a conversational response without unnecessary restaurant tool calls.
+
+Capability Requests
+
+Examples:
+
+What can you do?
+How do you work?
+Help
+What are your features?
+
+The agent explains:
+
+Available tools
+Memory
+Guardrails
+Ranking
+Recommendation process
+Food Requests
+
+Examples:
+
+I am hungry.
+Find vegetarian food in Delhi.
+I want Chinese food in Phagwara.
+Suggest something spicy under ₹500.
+
+These enter the full agentic loop.
+
+❌ Honest Failure Handling
+
+The agent is designed not to fabricate results.
+
+1. Unknown City
+
+If the dataset contains no restaurant entries for a city:
+
+I couldn't find restaurants in <city>.
+
+The agent does not invent a restaurant.
+
+2. No Safe Match
+
+If restaurants exist but none satisfy the hard requirements, the agent reports the failure.
+
+Example:
+
+I found restaurants in Jalandhar,
+but none matched Chinese while satisfying
+your Jain-friendly requirement.
+
+The system does not silently weaken the dietary requirement.
+
+3. Dietary Conflict
+
+If the session remembers:
+
+diet = vegetarian
+
+and a later request asks for:
+
+non-vegetarian food
+
+the agent detects the conflict before making an unsafe recommendation.
+
+It asks the user whether the dietary preference should be changed.
+
+4. Tool Failure
+
+The restaurant tool contains a demonstration error path for:
+
+simulate tool error
+
+If the tool raises an exception, the agent returns a safe failure message rather than fabricating restaurant data.
+
+This provides a useful viva demonstration of error handling.
+
+🔬 Agent Trace
+
+The API response contains an observable execution trace.
+
+Important trace stages include:
+
+Intent
+Memory
+Plan
+Tool Call
+Tool Result
+Guardrail
+Ranking
+Final Recommendation
+
+The frontend displays this as Agent Activity.
+
+This allows the user and evaluator to see what the agent did rather than only seeing the final answer.
+
+🖥️ Frontend
+
+The project includes a React/Vite frontend.
+
+The frontend displays:
+
+Chat conversation
+Restaurant recommendations
+Match score
+Rating
+Price
+Distance
+Cuisine
+Dietary information
+Recommendation explanation
+Agent activity
+Execution trace
+
+The frontend communicates with the API server through the application's API routes.
+
+🏗️ Project Structure
+LocalFood-AI-Agent/
+│
+├── backend/
+│   ├── agent.py
+│   ├── memory.py
+│   ├── tools.py
+│   │
+│   └── data/
+│       ├── restaurants.json
+│       └── sessions.json
+│
+├── artifacts/
+│   ├── api-server/
+│   └── localfood-ai/
+│
+├── demo.ipynb
+├── package.json
+├── pnpm-workspace.yaml
+├── pnpm-lock.yaml
+├── RENDER_DEPLOYMENT.md
+└── README.md
+⚙️ Technology Stack
+Backend
+Python
+JSON-backed session memory
+Deterministic restaurant tools
+API Layer
+Node.js
+Express
+TypeScript
+Frontend
+React
+Vite
+TypeScript
+Package Management
+pnpm
+Deployment
+Render
+🚀 Running the Project Locally
+
+Install dependencies:
+
 pnpm install
+
+Start the API server:
+
 pnpm --filter @workspace/api-server run dev
+
+Start the frontend:
+
 pnpm --filter @workspace/localfood-ai run dev
-```
 
-The web app is served at the project preview root and calls the shared `/api` service. Python 3 is required for the agent bridge. The default interpreter is `python3`; set `LOCALFOOD_PYTHON` if your environment uses a different executable.
+Python 3 is required for the agent bridge.
 
-## Environment
+If Python is installed under a different executable name, configure:
 
-Copy `.env.example` if you want to configure an OpenAI-compatible provider for future provider-backed planning. No API key is needed for the fully functional deterministic Demo Mode used by the course presentation. Never put secrets in frontend code or commit `.env`.
+LOCALFOOD_PYTHON
+🌐 Deployment
 
-## Notebook demo
+The project is configured for deployment through Render.
 
-Run `jupyter notebook demo.ipynb` (or open it in JupyterLab) and execute all cells top-to-bottom. The notebook contains **four demonstrations**:
+Deployment documentation:
 
-1. **Full recommendation** — both tools fire in sequence; vegetarian guardrail applied; top-5 ranked
-2. **Cross-turn memory** — Turn 1 stores vegetarian + Punjabi; Turn 2 provides only a city; agent applies remembered preferences without prompting
-3. **Dietary conflict** — agent refuses non-vegetarian request after storing vegetarian; 0 recommendations; no tools called
-4. **Honest no-match** — Jain-friendly Chinese in Jalandhar finds restaurants but none match; agent reports failure honestly
+RENDER_DEPLOYMENT.md
+
+The production architecture is:
+
+Browser
+   ↓
+React Frontend
+   ↓
+Express API
+   ↓
+Python Agent
+   ↓
+Restaurant Tools
+   ↓
+Local JSON Dataset
+
+The deployed application therefore uses the same core agent logic as the local demonstration.
+
+🧪 Testing Scenarios
+
+The following scenarios can be used to demonstrate the system.
+
+Test 1 — Basic Recommendation
+I want vegetarian food in Phagwara.
+
+Expected:
+
+Restaurant search
+→ dietary filtering
+→ ranking
+→ recommendation
+Test 2 — Cuisine Filtering
+I want Chinese food in Phagwara.
+
+Expected:
+
+find_restaurants()
+→ filter_by_cuisine("Chinese")
+→ rank
+Test 3 — Cross-Turn Memory
+Turn 1:
+I am vegetarian and I like Punjabi food in Phagwara.
+
+Turn 2:
+Suggest something.
+
+Expected:
+
+The agent reuses the remembered preferences.
+
+Test 4 — Budget
+I want vegetarian Chinese food in Phagwara under ₹500.
+
+Expected:
+
+Budget contributes to the ranking and recommendations.
+
+Test 5 — Negative Spice
+I don't like spicy food.
+
+Expected:
+
+spicePreference = mild
+Test 6 — Disliked Cuisine
+I don't like Chinese food.
+
+Expected:
+
+Chinese restaurants are excluded from recommendations.
+
+Test 7 — Combined Preferences
+I'm vegetarian and I want Chinese food in Phagwara under ₹500.
+I don't like spicy food.
+
+Expected remembered state:
+
+diet = vegetarian
+preferredCuisine = Chinese
+spicePreference = mild
+budget = ₹500
+location = Phagwara
+Test 8 — Unknown City
+I want food in Mumbai.
+
+Expected:
+
+No fabricated restaurant is returned.
+
+Test 9 — Tool Error
+simulate tool error
+
+Expected:
+
+The tool error is handled safely without fabricated data.
+
+📓 Notebook Demonstration
+
+The project includes:
+
+demo.ipynb
+
+Run:
+
+jupyter notebook demo.ipynb
+
+or open the notebook in JupyterLab.
+
+The notebook can demonstrate:
+
+Full recommendation flow
+Cross-turn memory
+Dietary conflict handling
+Honest no-match behavior
+
+The notebook provides an additional way to demonstrate the agent independently of the web interface.
+
+🎓 Viva Explanation
+
+A concise explanation of the project is:
+
+LocalFood AI is a single-agent local food recommender that follows a Plan → Act → Observe → Decide architecture. It reads persistent session memory, extracts user preferences, plans the required actions, calls find_restaurants() and filter_by_cuisine() at runtime, observes their results, applies hard dietary and dislike guardrails, ranks only safe candidates, and returns an explainable recommendation.
+
+Why is it agentic?
+
+Because the system does not execute one fixed recommendation function.
+
+The next action depends on the current state and the observation produced by the previous action.
+
+For example:
+
+If city is known
+    → search restaurants
+
+If cuisine is known
+    → filter the observation
+
+If dietary restrictions exist
+    → enforce them
+
+If safe candidates remain
+    → rank them
+
+Otherwise
+    → report the failure honestly
+What is the role of memory?
+
+Memory allows preferences from previous turns to influence future decisions.
+
+What are the hard constraints?
+
+Dietary requirements and explicitly disliked cuisines are enforced before ranking.
+
+Why use a local dataset?
+
+It makes the course demonstration deterministic, reproducible, fast, and resistant to fabricated external data.
+
+Why expose the agent trace?
+
+It makes the reasoning process observable and demonstrates that tools were actually called at runtime.
+
+🔐 API Keys and Security
+
+The deterministic demonstration mode does not require an external AI API key.
+
+If an external provider is configured for future experimentation, credentials should be stored in environment variables.
+
+Never put API keys in:
+
+Frontend source code
+GitHub
+README files
+Restaurant dataset
+Client-side JavaScript
+
+Never commit:
+
+.env
+
+or other files containing secrets.
+
+📌 Design Principles
+
+The project follows several important design principles:
+
+1. Tool Grounding
+
+Recommendations are based on the local restaurant dataset rather than fabricated restaurants.
+
+2. Statefulness
+
+Preferences persist across turns through session memory.
+
+3. Hard Constraints
+
+Safety-related requirements are applied before ranking.
+
+4. Explainability
+
+Recommendations contain reasons and score breakdowns.
+
+5. Honest Failure
+
+When no safe answer exists, the system says so.
+
+6. Observable Agent Behavior
+
+The execution trace exposes the agent's decisions and tool calls.
+
+7. Deterministic Demonstration
+
+The course version does not depend on unpredictable external restaurant APIs.
+
+📈 Future Improvements
+
+Possible future extensions include:
+
+Larger restaurant datasets
+Real restaurant APIs
+Real-time availability
+Geographic distance calculations
+User authentication
+Database-backed memory
+More sophisticated natural-language understanding
+LLM-based planning
+Personalized recommendation learning
+Restaurant opening-hours awareness
+Real-time pricing
+Multilingual food queries
+
+These are potential extensions and are not required for the current deterministic course demonstration.
+
+👨‍💻 Assessment Summary
+
+LocalFood AI demonstrates the following core concepts:
+
+Requirement	Implementation
+Single agent	backend/agent.py
+Agentic loop	Plan → Act → Observe → Decide
+Runtime tools	find_restaurants() and filter_by_cuisine()
+Persistent memory	backend/memory.py
+Structured dataset	restaurants.json
+Dietary guardrail	Hard filtering before ranking
+Negative preference handling	dislikedCuisine exclusion
+Preference handling	Diet, cuisine, spice, budget, location
+Explainability	Reasons + score breakdown
+Failure handling	Unknown city, no match, conflict, tool error
+Multi-turn behavior	JSON-backed session memory
+Observable execution	Agent activity + trace
+Web interface	React/Vite frontend
+API	Express/TypeScript
+Deployment	Render
+🏁 Conclusion
+
+LocalFood AI demonstrates how a small recommendation problem can be implemented as an agentic system rather than a simple lookup application.
+
+The agent maintains state, chooses actions, invokes tools, observes results, enforces constraints, evaluates candidates, and makes a final recommendation.
+
+The combination of:
+
+Memory
++
+Planning
++
+Runtime Tools
++
+Observation
++
+Guardrails
++
+Ranking
++
+Explainability
+
+forms the core of the LocalFood AI demonstration.
+
+LocalFood AI
+
+A transparent, stateful, tool-using local food recommendation agent.
+
+
+### One correction I deliberately made
+
+I **didn't claim that Gemini/OpenAI is currently powering the recommendation**, because your actual `agent.py`, `memory.py`, and `tools.py` show a deterministic Python agent. Your existing README also explicitly says no API key is required for Demo Mode.
+
+That is actually **better for the viva**: if your teacher asks *"Where is the AI?"*, you can explain the agentic architecture instead of getting trapped trying to prove that an LLM generated the recommendations.
+
+### To replace your README
+
+Save the above as:
+
+```text
+README.md
