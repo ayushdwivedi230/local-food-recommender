@@ -1,263 +1,332 @@
 # LocalFood AI
 
-A single-agent, agentic local-food recommendation system built for the **T13 "Local Food Recommender" course assessment**.
+LocalFood AI is a stateful, tool-using restaurant recommendation agent built around a transparent Plan → Act → Observe → Decide loop. The project is designed to demonstrate how a small but real agent can understand natural-language food requests, persist user preferences across turns, call tools at runtime, apply hard guardrails, rank safe options, and explain its reasoning.
 
-LocalFood AI demonstrates an explicit **Plan → Act → Observe → Decide** agent loop using real Python tool functions, persistent session memory, hard safety guardrails, transparent ranking, and explainable recommendations.
+It is built for a local food recommendation use case and uses a deterministic restaurant dataset instead of relying on external API calls for the demo. The system is intentionally explainable, robust, and easy to evaluate in a viva or classroom setting.
 
-The system accepts natural-language food requests such as:
+## Why this project matters
 
-> "I'm vegetarian, I want spicy Chinese food in Phagwara under ₹500."
+This project shows the practical difference between a static recommendation script and a genuine agent:
 
-It extracts the user's preferences, remembers them across turns, searches the local restaurant dataset, filters the results, applies hard constraints, ranks the remaining safe candidates, and explains why the recommendation was selected.
+- it understands user intent from natural language
+- it remembers previous preferences in session memory
+- it chooses which tools to call at runtime
+- it observes tool results before deciding on the next step
+- it enforces safety constraints before ranking
+- it explains why a recommendation was selected
 
----
+## Project highlights
 
-## 🎯 Project Objective
-
-The objective of LocalFood AI is to demonstrate how an **agentic AI system** can solve a recommendation problem by maintaining state, deciding what action to take, observing tool results, applying constraints, and making a final decision.
-
-Unlike a simple static recommendation function, the system:
-
-- Understands natural-language requests
-- Maintains user preferences across conversation turns
-- Decides when restaurant tools are required
-- Calls tools at runtime
-- Uses the result of one tool as the input state for the next tool
-- Applies hard dietary and dislike constraints
-- Ranks only safe candidates
-- Provides transparent explanations
-- Handles missing data and tool failures honestly
-- Produces an observable agent trace for demonstration and viva
+- Single-agent architecture in Python
+- Real runtime tool calls: `find_restaurants(city)` and `filter_by_cuisine(type)`
+- Session-based memory across multiple turns
+- Dietary, spice, budget, cuisine, and location handling
+- Hard constraint enforcement before ranking
+- Explicit dislike and exclusion logic
+- Explainable outputs with score breakdowns and reasons
+- Honest failure behavior when no safe match exists
+- Frontend + API integration ready for local use and deployment
 
 ---
 
-# 🧠 Agent Architecture
+## Architecture
 
-The core architecture follows:
+The agent follows a clear decision cycle:
+
+1. Detect intent
+2. Read session memory
+3. Extract preferences from the latest message
+4. Plan the required actions
+5. Call the relevant tools
+6. Observe tool results
+7. Apply hard guardrails
+8. Rank the remaining matches
+9. Return the final recommendation and trace
 
 ```text
-                    User Message
-                         │
-                         ▼
-                ┌─────────────────┐
-                │ Intent Detection│
-                └────────┬────────┘
-                         │
-              ┌──────────┴──────────┐
-              │                     │
-       Conversation             Food Request
-              │                     │
-              ▼                     ▼
-       Greeting / Help        Read Session Memory
-                                      │
-                                      ▼
-                            Extract Preferences
-                                      │
-                                      ▼
-                                    PLAN
-                                      │
-                                      ▼
-                         find_restaurants(city)
-                                      │
-                                      ▼
-                                   OBSERVE
-                                      │
-                                      ▼
-                         filter_by_cuisine(type)
-                                      │
-                                      ▼
-                                   OBSERVE
-                                      │
-                                      ▼
-                       Disliked Cuisine Guardrail
-                                      │
-                                      ▼
-                         Dietary Guardrail
-                                      │
-                                      ▼
-                                   RANK
-                                      │
-                                      ▼
-                                  DECIDE
-                                      │
-                                      ▼
-                         Recommendation + Trace
-                                      │
-                                      ▼
-                              Save Memory
-
-The agent therefore does not simply return a hard-coded restaurant.
-
-It performs a sequence of state-dependent actions and uses the observations from those actions to determine the next step.
-
-🔄 Plan → Act → Observe → Decide Loop
-
-For a typical request:
-
-"I'm vegetarian and I want Chinese food in Phagwara under ₹500."
-
-the agent performs the following process.
-
-1. Read Memory
-
-The agent retrieves the current session state from the JSON-backed memory store.
-
-Example:
-
-diet = vegetarian
-preferredCuisine = Chinese
-budget = 500
-location = Phagwara
-2. Extract New Preferences
-
-The latest message is analysed for:
-
-Diet
-Cuisine
-Disliked cuisine
-Spice preference
-Budget
-Location
-
-Only information present in the user's request is updated.
-
-Previously remembered preferences remain available for later turns.
-
-3. PLAN
-
-The agent creates a plan based on the current state.
-
-For example:
-
-Search Phagwara
-→ Filter Chinese
-→ Enforce vegetarian requirement
-→ Enforce budget
-→ Rank safe candidates
-
-If the user has explicitly disliked a cuisine, the plan also includes that exclusion.
-
-4. ACT — find_restaurants(city)
-
-The first required tool searches the restaurant dataset for the requested city.
-
+User Message
+    ↓
+Intent Classification
+    ↓
+Session Memory Load
+    ↓
+Preference Extraction
+    ↓
+PLAN
+    ↓
 find_restaurants(city)
-
-Example:
-
-find_restaurants("Phagwara")
-
-returns the restaurants indexed for Phagwara.
-
-5. OBSERVE
-
-The agent inspects the result returned by the tool.
-
-It does not assume that restaurants exist.
-
-If zero restaurants are returned, the agent reports that honestly.
-
-6. ACT — filter_by_cuisine(type)
-
-If a cuisine was requested, the agent calls:
-
+    ↓
+OBSERVE
+    ↓
 filter_by_cuisine(type)
+    ↓
+OBSERVE
+    ↓
+Guardrails + Validation
+    ↓
+RANK
+    ↓
+DECIDE
+    ↓
+Recommendation + Explanation + Trace
+```
 
-This tool operates on the previous restaurant-search observation.
+This keeps the logic transparent and demonstrates true agentic behavior rather than a hard-coded list of restaurants.
 
-Therefore the intended tool sequence is:
+---
 
-find_restaurants(city)
-        ↓
-observation
-        ↓
-filter_by_cuisine(type)
-        ↓
-observation
+## Core features
 
-This demonstrates a real tool-dependent agent workflow rather than two unrelated function calls.
+### Preference understanding
 
-7. Apply Hard Guardrails
+The agent can understand and maintain preferences such as:
 
-Before ranking, the agent removes restaurants that violate hard constraints.
+- vegetarian / vegan / Jain / non-vegetarian
+- preferred cuisine
+- disliked cuisine
+- spice preference (mild, medium, spicy)
+- budget limit
+- city or location
 
-Dietary Guardrail
+### Guardrails
 
-Supported dietary preferences include:
+Hard constraints are enforced before ranking, including:
 
-vegetarian
-vegan-friendly
-Jain-friendly
-non-vegetarian
+- dietary compatibility
+- explicit dislikes
+- required cuisine exclusions
+- no fabricated restaurants when data is missing
 
-For example:
+### Explainability
 
-User: I am vegetarian.
+Each recommendation includes:
 
-A restaurant that does not satisfy the vegetarian requirement cannot become the final recommendation merely because it has a higher rating.
+- restaurant name
+- cuisine
+- diet compatibility
+- rating
+- price range
+- distance
+- score
+- score breakdown
+- explicit reason for recommendation
 
-8. Disliked Cuisine Guardrail
+### Multi-turn memory
 
-Explicit negative preferences are also enforced.
+The system stores preferences in session memory so the user does not need to repeat the same constraints every turn.
 
-For example:
+### Honest failure handling
 
-User: I don't like Chinese food.
+If a city is unknown, no restaurants match, or constraints are incompatible, the agent reports the issue clearly instead of making up a recommendation.
 
-The agent stores:
+---
 
-dislikedCuisine = Chinese
+## Tech stack
 
-and excludes Chinese restaurants from the recommendation set.
+### Backend
 
-This prevents a previous positive preference from overriding an explicit negative preference.
+- Python
+- JSON-backed session memory
+- deterministic restaurant dataset
+- tool-based recommendation logic
 
-For example:
+### API layer
 
-Turn 1:
-I like Chinese.
+- TypeScript
+- Express
+- API routes for chat and memory interactions
 
-Turn 2:
-I don't like Chinese anymore.
+### Frontend
 
-The explicit negative preference takes priority.
+- React
+- Vite
+- TypeScript
+- Tailwind-based UI components
 
-9. Decide and Rank
+### Package management
 
-Only candidates that survive the hard constraints are ranked.
+- pnpm
 
-The ranking considers:
+---
 
-Cuisine match
-Dietary compatibility
-Rating
-Budget
-Spice preference
-Distance
+## Repository structure
 
-A transparent score breakdown is returned with every recommendation.
+```text
+LocalFood-AI-Agent/
+├── backend/
+│   ├── agent.py
+│   ├── memory.py
+│   ├── tools.py
+│   ├── main.py
+│   └── data/
+│       ├── restaurants.json
+│       └── sessions.json
+├── artifacts/
+│   ├── api-server/
+│   └── localfood-ai/
+├── demo.ipynb
+├── IMPROVEMENT_SUMMARY.md
+├── package.json
+├── pnpm-lock.yaml
+├── pnpm-workspace.yaml
+├── README.md
+├── RENDER_DEPLOYMENT.md
+├── requirements.txt
+├── tsconfig.base.json
+├── tsconfig.json
+└── ...
+```
 
-🛡️ Safety and Guardrails
+---
 
-LocalFood AI separates hard constraints from ranking preferences.
+## Local setup
 
-Hard constraints are enforced before ranking.
+### Prerequisites
 
-This is important because a restaurant should not receive a high recommendation score if it violates a user's dietary requirement or explicit exclusion.
+- Python 3.9+
+- Node.js
+- pnpm
 
-The main guardrails are:
+### Install dependencies
 
-Dietary Safety
-Vegetarian
-Vegan
-Jain
-Non-vegetarian
-Cuisine Exclusion
-"I don't like Chinese."
-"I hate Mughlai."
-"Don't recommend Punjabi."
+```bash
+pnpm install
+```
 
-These explicit negative preferences remove matching cuisines from the candidate set.
+### Start the backend API
+
+```bash
+pnpm --filter @workspace/api-server run dev
+```
+
+### Start the frontend
+
+```bash
+pnpm --filter @workspace/localfood-ai run dev
+```
+
+### Optional: run the Python agent directly
+
+```bash
+python backend/main.py
+```
+
+---
+
+## Testing
+
+The project includes a dedicated unit suite and end-to-end integration checks.
+
+### Run unit tests
+
+```bash
+python backend/test_agent.py
+```
+
+### Run integration tests
+
+```bash
+python backend/integration_test.py
+```
+
+These tests cover:
+
+- greetings and capability requests
+- preference extraction
+- multi-turn memory
+- budget and cuisine filtering
+- dislike handling
+- dietary conflicts
+- no-result scenarios
+- backward compatibility and schema validation
+
+---
+
+## Example conversation flows
+
+### Example 1
+
+> I am vegetarian and I want Punjabi food in Phagwara under 400 rupees.
+
+The agent will:
+
+- detect city: Phagwara
+- detect cuisine: Punjabi
+- detect dietary preference: vegetarian
+- detect budget: 400
+- search restaurants
+- filter results by cuisine
+- enforce dietary and budget constraints
+- rank candidates
+- return the best match with an explanation
+
+### Example 2
+
+> Actually, I don't like too much spice.
+
+The agent will:
+
+- update the remembered spice preference to mild
+- preserve existing constraints
+- recommend accordingly
+
+### Example 3
+
+> I don't like Chinese food anymore.
+
+The agent will:
+
+- remove Chinese from the candidate pool
+- continue using prior preferences
+- recommend a safe alternative
+
+---
+
+## Deployment
+
+This project is configured for deployment through Render. See [RENDER_DEPLOYMENT.md](RENDER_DEPLOYMENT.md) for deployment details.
+
+The production flow is conceptually:
+
+```text
+Browser
+  ↓
+React Frontend
+  ↓
+Express API
+  ↓
+Python Agent
+  ↓
+Restaurant Data + Tools
+```
+
+---
+
+## Viva-ready summary
+
+This project demonstrates a real, transparent agentic workflow that is appropriate for discussion in a technical assessment:
+
+- The system has a single agent
+- It makes runtime tool calls
+- It keeps memory across turns
+- It follows a visible reasoning loop
+- It applies hard constraints before ranking
+- It explains its recommendations
+- It avoids fabricating answers when constraints are impossible
+
+This makes the project stronger than a simple recommendation function because it shows actual agent behavior, not just a lookup result.
+
+---
+
+## License
+
+This project is intended for educational and demonstration purposes within the local food recommender assignment.
+
+---
+
+## Contact / contribution
+
+This repository is a demonstration project and is suitable for local experimentation and academic review. Contributions and improvements are welcome as long as they preserve the project’s focus on transparency, correctness, and explainability.
 
 Spice Negation
 
