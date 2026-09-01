@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import time
+from datetime import datetime, timezone
 from typing import Any
 from dataclasses import dataclass, field, asdict
 from enum import Enum
@@ -709,10 +710,11 @@ def _response(
     after_cuisine: int,
     after_diet: int,
     started: float,
+    memory_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build response in backward-compatible format."""
+    """Build response in backward-compatible format while preserving complete memory."""
     public = []
-    
+
     for restaurant in recommendations:
         public.append({
             "id": restaurant["id"],
@@ -730,10 +732,14 @@ def _response(
             "reason": restaurant["reason"],
             "scoreBreakdown": restaurant["scoreBreakdown"],
         })
-    
-    # Backward compatible memory format
-    memory_dict = state.to_memory()
-    
+
+    memory_dict = dict(get_memory(session_id))
+    memory_dict.update(state.to_memory())
+    if memory_override:
+        memory_dict.update(memory_override)
+    if not isinstance(memory_dict.get("updatedAt"), str) or not memory_dict["updatedAt"]:
+        memory_dict["updatedAt"] = datetime.now(timezone.utc).isoformat()
+
     return {
         "sessionId": session_id,
         "mode": "demo",
@@ -812,7 +818,7 @@ def _conversation(
     
     return _response(
         session_id, reply, state, activity, trace,
-        [], 0, 0, 0, started
+        [], 0, 0, 0, started, memory_override=get_memory(session_id)
     )
 
 
@@ -877,12 +883,14 @@ def run_agent(session_id: str, message: str) -> dict[str, Any]:
             session_id,
             conflict_msg + " Would you like to change your dietary preference?",
             old_state, activity, trace, [], 0, 0, 0, started,
+            memory_override=get_memory(session_id),
         )
     
     # Save new preferences
     if changes:
-        new_state = PreferenceState.from_memory(save_memory(session_id, new_state.to_memory()))
-        
+        saved_mem = save_memory(session_id, new_state.to_memory())
+        new_state = PreferenceState.from_memory(saved_mem)
+
         changes_list = []
         if "diet" in changes:
             if "diet_changed_from" in changes:
@@ -926,7 +934,8 @@ def run_agent(session_id: str, message: str) -> dict[str, Any]:
             f"Updated preferences: {changes}",
         ))
     else:
-        new_state = PreferenceState.from_memory(save_memory(session_id, new_state.to_memory()))
+        saved_mem = save_memory(session_id, new_state.to_memory())
+        new_state = PreferenceState.from_memory(saved_mem)
     
     # Check if we can proceed with search
     if not new_state.location:
@@ -1002,6 +1011,7 @@ def run_agent(session_id: str, message: str) -> dict[str, Any]:
             session_id,
             "Restaurant search temporarily failed. Please try again.",
             new_state, activity, trace, [], 0, 0, 0, started,
+            memory_override=saved_mem if 'saved_mem' in locals() else get_memory(session_id),
         )
     
     if not search_results:
@@ -1018,6 +1028,7 @@ def run_agent(session_id: str, message: str) -> dict[str, Any]:
             f"I couldn't find restaurants in {new_state.location}. "
             f"Try: {', '.join(CITIES[:4])}, or other major cities.",
             new_state, activity, trace, [], 0, 0, 0, started,
+            memory_override=saved_mem if 'saved_mem' in locals() else get_memory(session_id),
         )
     
     # ========== ACT & OBSERVE: Cuisine Filter ==========
@@ -1051,6 +1062,7 @@ def run_agent(session_id: str, message: str) -> dict[str, Any]:
                 session_id,
                 "Cuisine filtering temporarily failed. Please try again.",
                 new_state, activity, trace, [], len(search_results), 0, 0, started,
+                memory_override=saved_mem if 'saved_mem' in locals() else get_memory(session_id),
             )
         
         # Defensive locality check
@@ -1161,6 +1173,7 @@ def run_agent(session_id: str, message: str) -> dict[str, Any]:
             reply,
             new_state, activity, trace, [],
             len(search_results), len(cuisine_results), len(safe_results), started,
+            memory_override=saved_mem if 'saved_mem' in locals() else get_memory(session_id),
         )
     
     # ========== DECIDE: Rank Safe Candidates ==========
@@ -1192,4 +1205,5 @@ def run_agent(session_id: str, message: str) -> dict[str, Any]:
         f"{best['name']} is the strongest overall fit at {best['score']}/100.",
         new_state, activity, trace, ranked[:5],
         len(search_results), len(cuisine_results), len(safe_results), started,
+        memory_override=saved_mem if 'saved_mem' in locals() else get_memory(session_id),
     )
